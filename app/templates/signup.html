@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Get your workshop VM{% endblock %}
+{% block body %}
+<h1>Dokku on Civo — get your VM</h1>
+<p class="lead">Paste your SSH <strong>public</strong> key and you'll be assigned your own pre-built VM.</p>
+
+{% if free is not none %}
+  <p><span class="pill">{{ free }} VMs available</span></p>
+{% endif %}
+
+{% if error %}<div class="err">{{ error }}</div>{% endif %}
+
+<div class="card">
+  <form method="post" action="/signup" autocomplete="off">
+    <input type="hidden" name="_csrf" value="{{ csrf }}">
+
+    <label for="name">Your name</label>
+    <input type="text" id="name" name="name" value="{{ name }}" maxlength="80" required>
+
+    <label for="access_code">Workshop access code <span class="muted">(on the slide)</span></label>
+    <input type="text" id="access_code" name="access_code" required>
+
+    <label for="public_key">SSH public key</label>
+    <textarea id="public_key" name="public_key" placeholder="ssh-ed25519 AAAA... you@laptop" required>{{ public_key }}</textarea>
+    <p class="muted">
+      No key yet? Run <code>ssh-keygen -t ed25519</code>, then paste the contents of
+      <code>~/.ssh/id_ed25519.pub</code> (the file ending in <code>.pub</code> — never the private one).
+    </p>
+
+    <p style="margin-top:18px"><button type="submit">Claim my VM</button></p>
+  </form>
+</div>
+{% endblock %}

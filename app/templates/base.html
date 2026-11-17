@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Dokku Workshop{% endblock %}</title>
+<style>
+  :root {
+    --teal: #0E7C66; --navy: #13293D; --ink: #1b2733; --muted: #5b6670;
+    --line: #e2e8f0; --bg: #f7f9fb; --code: #f1f5f9; --pink: #d6336c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 24px 16px 64px; }
+  header.bar { height: 6px; background: var(--teal); }
+  h1 { color: var(--navy); font-size: 26px; margin: 24px 0 4px; }
+  h2 { color: var(--navy); font-size: 18px; margin: 28px 0 8px;
+       border-left: 4px solid var(--teal); padding-left: 10px; }
+  p.lead { color: var(--muted); margin-top: 0; }
+  label { display: block; font-weight: 600; margin: 16px 0 6px; }
+  input[type=text], input[type=password], textarea {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px;
+    font-size: 15px; font-family: inherit; background: #fff;
+  }
+  textarea { min-height: 96px; font-family: ui-monospace, "Roboto Mono", Menlo, monospace; font-size: 13px; }
+  button, .btn {
+    background: var(--teal); color: #fff; border: 0; border-radius: 8px;
+    padding: 11px 18px; font-size: 15px; font-weight: 600; cursor: pointer;
+  }
+  button.secondary { background: #fff; color: var(--navy); border: 1px solid var(--line); }
+  button:hover { filter: brightness(1.05); }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin: 16px 0; }
+  .err { background: #fde8ef; border: 1px solid #f3b5cd; color: #9b1b48;
+         padding: 12px 14px; border-radius: 8px; margin: 12px 0; }
+  .notice { background: #e7f6f1; border: 1px solid #a9ddcd; color: #0b5a4a;
+            padding: 12px 14px; border-radius: 8px; margin: 12px 0; }
+  .pill { display: inline-block; background: var(--code); color: var(--navy);
+          border-radius: 999px; padding: 2px 10px; font-size: 13px; font-weight: 600; }
+  pre { background: var(--code); border-radius: 10px; padding: 14px 16px; overflow-x: auto;
+        font-family: ui-monospace, "Roboto Mono", Menlo, monospace; font-size: 13px;
+        color: #0f3d3e; margin: 0; }
+  .codeblock { position: relative; margin: 10px 0; }
+  .copy { position: absolute; top: 8px; right: 8px; padding: 5px 10px; font-size: 12px;
+          background: var(--navy); }
+  code { background: var(--code); padding: 1px 6px; border-radius: 5px;
+         font-family: ui-monospace, "Roboto Mono", Menlo, monospace; font-size: 13px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  .muted { color: var(--muted); font-size: 14px; }
+  .free { color: var(--teal); font-weight: 700; }
+  .taken { color: var(--pink); font-weight: 700; }
+  a { color: var(--teal); }
+  .inline { display: inline; }
+</style>
+</head>
+<body>
+<header class="bar"></header>
+<div class="wrap">
+{% block body %}{% endblock %}
+</div>
+<script>
+  document.addEventListener("click", function (e) {
+    var btn = e.target.closest(".copy");
+    if (!btn) return;
+    var el = document.getElementById(btn.getAttribute("data-copy-target"));
+    if (!el) return;
+    var text = el.innerText;
+    navigator.clipboard.writeText(text).then(function () {
+      var old = btn.innerText; btn.innerText = "Copied"; setTimeout(function () { btn.innerText = old; }, 1200);
+    });
+  });
+</script>
+</body>
+</html>

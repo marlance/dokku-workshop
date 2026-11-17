@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Admin — workshop VMs{% endblock %}
+{% block body %}
+<h1>Workshop admin</h1>
+<p class="lead">
+  <span class="pill">{{ counts.free }} free</span>
+  <span class="pill">{{ counts.taken }} taken</span>
+</p>
+
+{% if notice %}<div class="notice">{{ notice }}</div>{% endif %}
+
+<div class="card">
+  <form method="post" action="/admin/sync" class="inline">
+    <input type="hidden" name="_csrf" value="{{ csrf }}">
+    <button type="submit" class="secondary">Sync pool from keyctl</button>
+  </form>
+  <a class="btn secondary" href="/admin/reconcile" style="text-decoration:none">Reconcile</a>
+  <a class="btn secondary" href="/admin/export.csv" style="text-decoration:none">Export CSV</a>
+</div>
+
+{% if mismatches is not none %}
+<h2>Reconcile result</h2>
+<div class="card">
+  <p><strong>Authorized on jump but free in DB:</strong>
+    {{ mismatches.authorized_but_free | join(", ") or "none" }}</p>
+  <p><strong>Taken in DB but not authorized on jump:</strong>
+    {{ mismatches.taken_but_unauthorized | join(", ") or "none" }}</p>
+</div>
+{% endif %}
+
+<h2>VMs</h2>
+<table>
+  <thead>
+    <tr><th>User</th><th>IP</th><th>Status</th><th>Attendee</th><th>Assigned</th><th></th></tr>
+  </thead>
+  <tbody>
+  {% for v in vms %}
+    <tr>
+      <td>{{ v.vm_user }}</td>
+      <td>{{ v.vm_ip }}</td>
+      <td class="{{ v.status }}">{{ v.status }}</td>
+      <td>{{ v.attendee or "" }}</td>
+      <td class="muted">{{ v.assigned_at or "" }}</td>
+      <td>
+        {% if v.status == "taken" %}
+        <form method="post" action="/admin/release/{{ v.vm_user }}" class="inline"
+              onsubmit="return confirm('Release {{ v.vm_user }}? This revokes the attendee key.');">
+          <input type="hidden" name="_csrf" value="{{ csrf }}">
+          <button type="submit" class="secondary">Release</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  {% if not vms %}
+    <tr><td colspan="6" class="muted">No VMs yet. Click “Sync pool from keyctl”.</td></tr>
+  {% endif %}
+  </tbody>
+</table>
+{% endblock %}

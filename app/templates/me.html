@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Your VM — {{ user_nn }}{% endblock %}
+{% block body %}
+<h1>You're set, {{ attendee }} 👋</h1>
+<p class="lead">You are <span class="pill">{{ user_nn }}</span>. Bookmark this page — reopen it any time.</p>
+
+<h2>Your app URLs</h2>
+<div class="codeblock">
+  <button class="copy" data-copy-target="urls">Copy</button>
+  <pre id="urls">Docker:     {{ app_url }}
+Kubernetes: {{ app_k8s_url }}</pre>
+</div>
+
+<h2>1. Add this to your SSH config</h2>
+<p class="muted">File location: <code>~/.ssh/config</code> on Mac/Linux, <code>C:\Users\&lt;name&gt;\.ssh\config</code> on Windows.</p>
+<div class="codeblock">
+  <button class="copy" data-copy-target="sshcfg">Copy</button>
+  <pre id="sshcfg">Host workshop-jump
+  HostName {{ jump_public_ip }}
+  User jump
+  IdentityFile ~/.ssh/id_ed25519
+
+Host dokku-{{ user_nn }}
+  HostName {{ vm_ip }}
+  User dokku
+  ProxyJump workshop-jump
+  IdentityFile ~/.ssh/id_ed25519</pre>
+</div>
+
+<h2>2. Test it</h2>
+<div class="codeblock">
+  <button class="copy" data-copy-target="test">Copy</button>
+  <pre id="test">ssh dokku@dokku-{{ user_nn }} version</pre>
+</div>
+<p class="muted">You should see a Dokku version number. If so, you're ready.</p>
+
+<h2>3. Cheat sheet</h2>
+<div class="codeblock">
+  <button class="copy" data-copy-target="cheat">Copy</button>
+  <pre id="cheat">ssh dokku@dokku-{{ user_nn }} apps:create myapp
+git remote add dokku dokku@dokku-{{ user_nn }}:myapp
+git push dokku main
+ssh dokku@dokku-{{ user_nn }} domains:set myapp myapp-{{ user_nn }}.{{ base_domain }}
+ssh dokku@dokku-{{ user_nn }} config:set myapp BG_COLOR=tomato
+ssh dokku@dokku-{{ user_nn }} logs myapp -t
+ssh dokku@dokku-{{ user_nn }} scheduler:set myapp-k8s selected k3s</pre>
+</div>
+
+<p class="muted" style="margin-top:28px">Stuck? Raise your hand — the instructor or a helper will come over.</p>
+{% endblock %}

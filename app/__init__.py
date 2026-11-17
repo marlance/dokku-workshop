@@ -1,0 +1,1 @@
+"""Dokku workshop signup app."""

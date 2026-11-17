@@ -1,0 +1,46 @@
+# Local development only. Spins up Postgres and runs the app in DRY_RUN mode on a
+# stock Python image (no Dockerfile — production uses buildpacks). From the repo
+# root:  docker compose up  ->  http://localhost:8000
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: workshop
+      POSTGRES_PASSWORD: workshop
+      POSTGRES_DB: workshop
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workshop"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  app:
+    image: python:3.12-slim
+    working_dir: /srv
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://workshop:workshop@db:5432/workshop
+      DRY_RUN: "1"
+      WORKSHOP_CODE: dokku2026
+      ADMIN_USER: admin
+      ADMIN_PASSWORD: change-me
+      SECRET_KEY: dev-only-not-secret
+      BASE_DOMAIN: workshop.example.com
+      JUMP_PUBLIC_IP: 203.0.113.10
+      DRYRUN_DIR: /srv/dryrun
+    command: >
+      sh -c "pip install --no-cache-dir -r requirements.txt &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/srv
+
+volumes:
+  pgdata:

@@ -1,0 +1,273 @@
+#!/usr/bin/env python3
+"""workshop-keyctl — the ONLY thing the signup app can run on the jump host.
+
+Installed as the forced command for the ``keyadmin`` user:
+
+    command="/usr/local/bin/workshop-keyctl",restrict ssh-ed25519 AAAA... signup-app
+
+It reads the requested action from ``SSH_ORIGINAL_COMMAND`` (falling back to argv
+for local testing) and supports:  pool | add | remove | list.
+
+Trust nothing. The app already validated its input; we validate again here,
+because this is the real security boundary. Only stdlib — nothing beyond what
+Ubuntu ships with python3.
+
+Paths and the ssh binary are overridable via env so this can be unit-tested with
+no jump host and no VMs (see keyctl/test/test_keyctl.sh).
+"""
+from __future__ import annotations
+
+import fcntl
+import json
+import os
+import re
+import shlex
+import subprocess
+import sys
+import tempfile
+
+POOL_FILE = os.environ.get("WORKSHOP_POOL_FILE", "/etc/workshop/vm_pool.json")
+AUTHKEYS = os.environ.get("WORKSHOP_JUMP_AUTHKEYS", "/home/jump/.ssh/authorized_keys")
+LOCK_FILE = os.environ.get("WORKSHOP_LOCK", "/run/lock/workshop-keyctl.lock")
+VM_KEY = os.environ.get("WORKSHOP_VM_KEY", "/etc/workshop/vm_root_ed25519")
+SSH_BIN = os.environ.get("WORKSHOP_SSH_BIN", "ssh")
+VM_SSH_USER = os.environ.get("WORKSHOP_VM_SSH_USER", "root")
+JUMP_USER = os.environ.get("WORKSHOP_JUMP_USER", "jump")
+NO_CHOWN = os.environ.get("WORKSHOP_NO_CHOWN") == "1"
+
+LABEL_RE = re.compile(r"^[a-z0-9-]{1,32}$")
+PERMITOPEN_RE = re.compile(r'permitopen="([^"]+):22"')
+
+
+def out(payload) -> None:
+    """Print exactly one JSON line on stdout (the app parses the last line)."""
+    sys.stdout.write(json.dumps(payload, separators=(",", ":")) + "\n")
+
+
+def die(msg: str, code: int = 1):
+    out({"ok": False, "error": msg})
+    sys.exit(code)
+
+
+def load_pool() -> list[dict]:
+    try:
+        with open(POOL_FILE) as fh:
+            data = json.load(fh)
+    except FileNotFoundError:
+        die(f"pool file not found: {POOL_FILE}")
+    except json.JSONDecodeError:
+        die("pool file is not valid JSON")
+    if not isinstance(data, list):
+        die("pool file must be a JSON array")
+    return data
+
+
+def vm_ip(pool: list[dict], vm_user: str) -> str:
+    for e in pool:
+        if e.get("user") == vm_user:
+            ip = e.get("ip")
+            if not ip:
+                die(f"pool entry for {vm_user} has no ip")
+            return ip
+    die(f"unknown vm_user: {vm_user}")
+
+
+def read_stdin_key() -> str:
+    raw = sys.stdin.read()
+    if "PRIVATE KEY" in raw.upper():
+        die("refusing a private key")
+    line = next((ln.strip() for ln in raw.splitlines() if ln.strip()), "")
+    if not line:
+        die("no public key on stdin")
+    return line
+
+
+def validate_key(line: str) -> str:
+    """Return the normalized 'type base64' (comment stripped), or die."""
+    parts = line.split()
+    if len(parts) < 2:
+        die("malformed public key")
+    with tempfile.NamedTemporaryFile("w", suffix=".pub", delete=False) as fh:
+        fh.write(line + "\n")
+        tmp = fh.name
+    try:
+        rc = subprocess.run(["ssh-keygen", "-l", "-f", tmp],
+                            capture_output=True, text=True)
+    finally:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+    if rc.returncode != 0:
+        die("ssh-keygen rejected the key")
+    return parts[0] + " " + parts[1]
+
+
+class FileLock:
+    def __init__(self, path: str):
+        self.path = path
+        self.fh = None
+
+    def __enter__(self):
+        os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
+        self.fh = open(self.path, "w")
+        fcntl.flock(self.fh, fcntl.LOCK_EX)
+        return self
+
+    def __exit__(self, *exc):
+        if self.fh:
+            fcntl.flock(self.fh, fcntl.LOCK_UN)
+            self.fh.close()
+
+
+def read_authkeys() -> list[str]:
+    try:
+        with open(AUTHKEYS) as fh:
+            return [ln.rstrip("\n") for ln in fh if ln.strip()]
+    except FileNotFoundError:
+        return []
+
+
+def write_authkeys(lines: list[str]) -> None:
+    """Replace authorized_keys atomically, preserving sshd StrictModes perms."""
+    d = os.path.dirname(AUTHKEYS) or "."
+    os.makedirs(d, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=d, prefix=".authkeys_")
+    try:
+        with os.fdopen(fd, "w") as fh:
+            fh.write("\n".join(lines) + ("\n" if lines else ""))
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.chmod(tmp, 0o600)
+        if not NO_CHOWN:
+            try:
+                import pwd
+                pw = pwd.getpwnam(JUMP_USER)
+                os.chown(tmp, pw.pw_uid, pw.pw_gid)
+            except (KeyError, PermissionError):
+                pass  # best effort; cloud-init guarantees ownership in prod
+        os.replace(tmp, AUTHKEYS)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def line_label(line: str) -> str | None:
+    toks = line.split()
+    return toks[-1] if toks else None
+
+
+def run_on_vm(ip: str, remote: str, stdin: str | None = None) -> subprocess.CompletedProcess:
+    argv = [
+        SSH_BIN, "-i", VM_KEY,
+        "-o", "BatchMode=yes",
+        "-o", "StrictHostKeyChecking=accept-new",
+        "-o", "ConnectTimeout=10",
+        f"{VM_SSH_USER}@{ip}", remote,
+    ]
+    return subprocess.run(argv, input=stdin, capture_output=True, text=True)
+
+
+# --------------------------------------------------------------------------- #
+# subcommands
+# --------------------------------------------------------------------------- #
+def cmd_pool(_args):
+    out(load_pool())
+
+
+def cmd_add(args):
+    if len(args) != 2:
+        die("usage: add <vm_user> <label>")
+    vm_user, label = args
+    if not LABEL_RE.match(label):
+        die("invalid label")
+    pool = load_pool()
+    ip = vm_ip(pool, vm_user)
+    key_line = read_stdin_key()
+    key_norm = validate_key(key_line)
+    authline = f'restrict,port-forwarding,permitopen="{ip}:22" {key_norm} {label}'
+
+    idempotent = False
+    with FileLock(LOCK_FILE):
+        lines = read_authkeys()
+        # Idempotent: same label + same key already present -> no file change.
+        for ln in lines:
+            if line_label(ln) == label and key_norm in ln and f'permitopen="{ip}:22"' in ln:
+                idempotent = True
+                break
+        if not idempotent:
+            # Drop any stale line for this label before adding the fresh one.
+            lines = [ln for ln in lines if line_label(ln) != label]
+            lines.append(authline)
+            write_authkeys(lines)
+
+    # Authorize on the VM's Dokku (idempotent: remove-then-add).
+    remote = (
+        f"sh -c {shlex.quote(f'dokku ssh-keys:remove {label} >/dev/null 2>&1 || true; dokku ssh-keys:add {label}')}"
+    )
+    rc = run_on_vm(ip, remote, stdin=key_norm + "\n")
+    if rc.returncode != 0:
+        die(f"dokku ssh-keys:add failed on {vm_user}: {rc.stderr.strip()[:200]}", code=3)
+
+    out({"ok": True, "vm_user": vm_user, "label": label, "vm_ip": ip, "idempotent": idempotent})
+
+
+def cmd_remove(args):
+    if len(args) != 2:
+        die("usage: remove <vm_user> <label>")
+    vm_user, label = args
+    if not LABEL_RE.match(label):
+        die("invalid label")
+    pool = load_pool()
+    ip = vm_ip(pool, vm_user)
+
+    removed = 0
+    with FileLock(LOCK_FILE):
+        lines = read_authkeys()
+        kept = []
+        for ln in lines:
+            if line_label(ln) == label and f'permitopen="{ip}:22"' in ln:
+                removed += 1
+            else:
+                kept.append(ln)
+        if removed:
+            write_authkeys(kept)
+
+    run_on_vm(ip, f"dokku ssh-keys:remove {shlex.quote(label)}")
+    out({"ok": True, "vm_user": vm_user, "label": label, "removed": removed})
+
+
+def cmd_list(_args):
+    pool = load_pool()
+    ip_to_user = {e.get("ip"): e.get("user") for e in pool}
+    rows = []
+    for ln in read_authkeys():
+        m = PERMITOPEN_RE.search(ln)
+        if not m:
+            continue
+        ip = m.group(1)
+        rows.append({
+            "vm_user": ip_to_user.get(ip),
+            "vm_ip": ip,
+            "label": line_label(ln),
+        })
+    out(rows)
+
+
+def main() -> None:
+    orig = os.environ.get("SSH_ORIGINAL_COMMAND")
+    tokens = shlex.split(orig) if orig else sys.argv[1:]
+    if not tokens:
+        die("no command")
+    sub, args = tokens[0], tokens[1:]
+    handlers = {"pool": cmd_pool, "add": cmd_add, "remove": cmd_remove, "list": cmd_list}
+    if sub not in handlers:
+        die(f"unknown command: {sub}")
+    handlers[sub](args)
+
+
+if __name__ == "__main__":
+    main()
