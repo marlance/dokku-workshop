@@ -18,6 +18,6 @@ vm_count      = 12          # 12 for the dry run; ~160 for the real 150-attendee
 instance_size = "g3.large"  # 8GB/4CPU — confirm the slug with `civo size ls`
 jump_size     = "g3.medium" # confirm with `civo size ls`
 # dokku_version = "v0.35.20" # confirm a current tag at github.com/dokku/dokku/releases
-# ubuntu_filter = "ubuntu-24.04"  # confirm with `civo diskimage ls`
+# ubuntu_filter = "ubuntu-noble"  # 24.04 in mum1; confirm with `civo diskimage ls --region mum1`
 
 # civo_token is read from CIVO_TOKEN in your environment — don't put it here.

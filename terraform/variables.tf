@@ -85,7 +85,7 @@ variable "dokku_version" {
 }
 
 variable "ubuntu_filter" {
-  description = "Substring used to select the Ubuntu disk image. Verify the available names with `civo diskimage ls`."
+  description = "Substring used to select the Ubuntu disk image. In mum1 the 24.04 image is named 'ubuntu-noble' (22.04 = 'ubuntu-jammy'). Verify with `civo diskimage ls --region <region>`."
   type        = string
-  default     = "ubuntu-24.04"
+  default     = "ubuntu-noble"
 }
