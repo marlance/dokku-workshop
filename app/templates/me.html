@@ -13,6 +13,7 @@ Kubernetes: {{ app_k8s_url }}</pre>
 
 <h2>1. Add this to your SSH config</h2>
 <p class="muted">File location: <code>~/.ssh/config</code> on Mac/Linux, <code>C:\Users\&lt;name&gt;\.ssh\config</code> on Windows.</p>
+<p class="muted"><strong>If your key isn't <code>~/.ssh/id_ed25519</code></strong>, change both <code>IdentityFile</code> lines to your key — the private key whose <code>.pub</code> you pasted at signup (e.g. <code>~/.ssh/id_ed25519</code> → <code>~/.ssh/&lt;your-key&gt;</code>).</p>
 <div class="codeblock">
   <button class="copy" data-copy-target="sshcfg">Copy</button>
   <pre id="sshcfg">Host workshop-jump
