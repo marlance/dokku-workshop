@@ -20,20 +20,22 @@ Signup app ──SSH──▶ keyadmin@jump ──(forced command)──▶ work
 | `civo_firewall` × 2 | jump: 22+80 public. VMs: 22+80 **only from the jump IP** |
 | `civo_instance` (jump) | Caddy, bastion users (`jump`/`keyadmin`/`ops`), keyctl, pool, VM key |
 | `civo_instance` × `vm_count` | Dokku + k3s scheduler, root authorized for the jump |
-| `civo_dns_domain_record` × 2 | `*` and `jump` → jump IP |
+| `cloudflare_record` × 2 | `*` and `jump` → jump IP (DNS-only, in Cloudflare) |
 | `tls_private_key` × 2 | keyctl key (app) and vm_root key (jump→VM) — generated, not pasted |
 
 ## Prerequisites
 
 - Terraform ≥ 1.3, the `civo` CLI logged in (`civo apikey current`), `export CIVO_TOKEN=...`.
-- A domain managed in **Civo DNS** on this account (→ `base_domain`).
+- A domain in **Cloudflare** (→ `cloudflare_zone`), and a Cloudflare API token with
+  Zone:DNS:Edit: `export CLOUDFLARE_API_TOKEN=...`.
 - Your SSH keypair (→ `operator_ssh_public_key`).
 
 ## Apply
 
 ```bash
 cd terraform
-cp terraform.tfvars.example terraform.tfvars   # fill in base_domain + operator key
+cp terraform.tfvars.example terraform.tfvars   # cloudflare_zone + base_domain + operator key
+export CIVO_TOKEN=...  CLOUDFLARE_API_TOKEN=...
 terraform init
 terraform plan        # sanity-check sizes/image/region here
 terraform apply

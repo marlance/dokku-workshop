@@ -5,3 +5,9 @@ provider "civo" {
   token  = var.civo_token
   region = var.region
 }
+
+# Reads CLOUDFLARE_API_TOKEN from the environment when var.cloudflare_api_token
+# is null (recommended). The token needs Zone:DNS:Edit on the chosen zone.
+provider "cloudflare" {
+  api_token = var.cloudflare_api_token
+}

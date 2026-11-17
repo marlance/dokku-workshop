@@ -19,12 +19,24 @@ variable "name_prefix" {
 
 variable "base_domain" {
   description = <<-EOT
-    Domain that attendee apps are served under, e.g. "dokku.example.com".
-    MUST be a zone managed in Civo DNS on this account — Terraform creates the
-    wildcard (*) and jump A records in it. Attendee apps resolve as
+    Full domain attendee apps are served under, e.g. "workshop.example.com".
+    Terraform creates wildcard (*) and jump A records for it in Cloudflare.
+    Must sit inside var.cloudflare_zone. Attendee apps resolve as
     myapp-userNN.<base_domain> and myapp-k8s-userNN.<base_domain>.
   EOT
   type        = string
+}
+
+variable "cloudflare_zone" {
+  description = "The Cloudflare zone (registrable domain) that contains base_domain, e.g. \"example.com\". Pick one of your Cloudflare domains."
+  type        = string
+}
+
+variable "cloudflare_api_token" {
+  description = "Cloudflare API token with Zone:DNS:Edit on cloudflare_zone. Leave null to use the CLOUDFLARE_API_TOKEN environment variable (recommended)."
+  type        = string
+  default     = null
+  sensitive   = true
 }
 
 variable "vm_count" {

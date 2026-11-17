@@ -1,7 +1,10 @@
 # Copy to terraform.tfvars and fill in. (terraform.tfvars is gitignored.)
 
-# Domain you own in Civo DNS. Attendee apps become myapp-userNN.<base_domain>.
-base_domain = "dokku.example.com"
+# DNS lives in Cloudflare. Pick one of your Cloudflare domains as the zone, and a
+# full base_domain inside it. Attendee apps become myapp-userNN.<base_domain>.
+cloudflare_zone = "example.com"             # one of your Cloudflare domains
+base_domain     = "workshop.example.com"    # must sit inside that zone
+# cloudflare_api_token is read from CLOUDFLARE_API_TOKEN in your environment.
 
 # Your SSH public key — creates the 'ops' sudo login on the jump host.
 operator_ssh_public_key = "ssh-ed25519 AAAA... you@laptop"
