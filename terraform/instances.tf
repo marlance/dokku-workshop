@@ -24,6 +24,13 @@ resource "civo_instance" "vm" {
   volume_type = "standard"
   notes       = "Dokku on Civo workshop — attendee VM ${each.key}"
   tags        = [var.name_prefix, "attendee-vm"]
+
+  # The Civo provider marks `script` immutable and errors on any diff (even on
+  # destroy/replace). Ignore it so routine applies never get blocked; to push a
+  # new script, recreate: `terraform state rm`, delete the instance, re-apply.
+  lifecycle {
+    ignore_changes = [script]
+  }
 }
 
 # --------------------------------------------------------------------------- #
@@ -45,4 +52,8 @@ resource "civo_instance" "jump" {
   tags          = [var.name_prefix, "jump"]
 
   depends_on = [civo_instance.vm]
+
+  lifecycle {
+    ignore_changes = [script]
+  }
 }
