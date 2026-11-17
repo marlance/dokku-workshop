@@ -21,6 +21,7 @@ resource "civo_instance" "vm" {
   sshkey_id   = civo_ssh_key.vm_root.id
   region      = var.region
   script      = local.vm_user_data
+  volume_type = "standard"
   notes       = "Dokku on Civo workshop — attendee VM ${each.key}"
   tags        = [var.name_prefix, "attendee-vm"]
 }
@@ -39,6 +40,7 @@ resource "civo_instance" "jump" {
   region        = var.region
   reserved_ipv4 = civo_reserved_ip.jump.ip
   script        = local.jump_user_data
+  volume_type   = "standard"
   notes         = "Dokku on Civo workshop — jump host"
   tags          = [var.name_prefix, "jump"]
 
