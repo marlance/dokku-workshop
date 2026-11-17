@@ -1,0 +1,20 @@
+# Copy to terraform.tfvars and fill in. (terraform.tfvars is gitignored.)
+
+# Domain you own in Civo DNS. Attendee apps become myapp-userNN.<base_domain>.
+base_domain = "dokku.example.com"
+
+# Your SSH public key — creates the 'ops' sudo login on the jump host.
+operator_ssh_public_key = "ssh-ed25519 AAAA... you@laptop"
+
+# Path to the matching private key (used by the helper scripts only).
+operator_ssh_private_key_path = "~/.ssh/id_ed25519"
+
+# --- usually fine as defaults ---
+region        = "mum1"
+vm_count      = 12          # 12 for the dry run; ~160 for the real 150-attendee event
+instance_size = "g3.large"  # 8GB/4CPU — confirm the slug with `civo size ls`
+jump_size     = "g3.medium" # confirm with `civo size ls`
+# dokku_version = "v0.35.20" # confirm a current tag at github.com/dokku/dokku/releases
+# ubuntu_filter = "ubuntu-24.04"  # confirm with `civo diskimage ls`
+
+# civo_token is read from CIVO_TOKEN in your environment — don't put it here.

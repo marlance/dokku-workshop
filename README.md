@@ -5,8 +5,8 @@ workshop. Each attendee gets their own pre-provisioned Civo VM (Dokku + k3s
 scheduler), reached through a single jump host. Attendees paste an SSH public key
 into a web app and are handed a VM, an SSH config and a cheat sheet.
 
-> **Status:** Phase 1 (signup app + keyctl) is built. Phase 2 (Terraform) is
-> scaffolded separately and not in this repo yet.
+> **Status:** Phase 1 (signup app + keyctl) and Phase 2 (Terraform — jump host +
+> attendee VMs on Civo, under `terraform/`) are both built.
 
 ```
 Attendee laptop
