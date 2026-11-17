@@ -39,6 +39,18 @@ variable "cloudflare_api_token" {
   sensitive   = true
 }
 
+variable "vm_public_ip" {
+  description = <<-EOT
+    Whether attendee VMs get a public IP. false (recommended) = private-only:
+    the VMs are unreachable from the internet and only the jump host can reach
+    them over the private network — true network isolation. REQUIRES that Civo
+    gives private-only instances outbound internet (NAT) so cloud-init can install
+    Dokku/k3s; if it does not, set this true or add a NAT path.
+  EOT
+  type        = bool
+  default     = false
+}
+
 variable "vm_count" {
   description = "Number of attendee VMs to provision (attendees + spares). 12 for the dry run; bump to ~160 for the real 150-attendee workshop."
   type        = number

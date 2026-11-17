@@ -6,8 +6,12 @@
 locals {
   vm_users = [for i in range(var.vm_count) : format("user%02d", i + 1)]
 
-  # user -> public IP, available after the VMs are created.
-  vm_ips = { for u in local.vm_users : u => civo_instance.vm[u].public_ip }
+  # user -> reachable IP (private when VMs have no public IP), after create.
+  vm_ips = {
+    for u in local.vm_users : u => (
+      var.vm_public_ip ? civo_instance.vm[u].public_ip : civo_instance.vm[u].private_ip
+    )
+  }
 
   # Pool consumed by `workshop-keyctl pool` on the jump host.
   pool_json = jsonencode([for u in local.vm_users : { user = u, ip = local.vm_ips[u] }])

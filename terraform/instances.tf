@@ -19,9 +19,10 @@ resource "civo_instance" "vm" {
   network_id  = civo_network.main.id
   firewall_id = civo_firewall.vm.id
   sshkey_id   = civo_ssh_key.vm_root.id
-  region      = var.region
-  script      = local.vm_user_data
-  volume_type = "standard"
+  region             = var.region
+  script             = local.vm_user_data
+  volume_type        = "standard"
+  public_ip_required = var.vm_public_ip ? "create" : "none"
   notes       = "Dokku on Civo workshop — attendee VM ${each.key}"
   tags        = [var.name_prefix, "attendee-vm"]
 
