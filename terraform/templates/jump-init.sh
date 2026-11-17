@@ -88,7 +88,7 @@ KEY=/etc/workshop/vm_root_ed25519
 fail=0
 while IFS='=' read -r u ip; do
   [ -n "$u" ] || continue
-  if ssh -i "$KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=6 "root@$ip" \
+  if ssh -n -i "$KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=6 "root@$ip" \
        'command -v dokku >/dev/null && systemctl is-active --quiet nginx' >/dev/null 2>&1; then
     echo "OK    $u ($ip)"
   else
