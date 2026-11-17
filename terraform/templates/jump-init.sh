@@ -9,16 +9,37 @@ chmod 755 /usr/local/bin/workshop-keyctl
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y python3 curl gnupg debian-keyring debian-archive-keyring apt-transport-https
+apt-get install -y python3 curl
 
-# --- Caddy (HTTP ingress for attendee apps) ------------------------------- #
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
-  | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
-  > /etc/apt/sources.list.d/caddy-stable.list
-apt-get update -y
-apt-get install -y caddy
+# --- Caddy (static binary — avoids the flaky cloudsmith apt-repo GPG) ------ #
+curl -fsSL -o /tmp/caddy "https://caddyserver.com/api/download?os=linux&arch=amd64"
+install -m 0755 /tmp/caddy /usr/local/bin/caddy
+rm -f /tmp/caddy
+id caddy >/dev/null 2>&1 || useradd --system --home /var/lib/caddy --create-home --shell /usr/sbin/nologin caddy
+install -d -o caddy -g caddy -m 0755 /etc/caddy /var/lib/caddy
 install -o root -g root -m 0644 /etc/workshop/Caddyfile /etc/caddy/Caddyfile
+cat > /etc/systemd/system/caddy.service <<'UNIT'
+[Unit]
+Description=Caddy
+Documentation=https://caddyserver.com/docs/
+After=network-online.target
+Requires=network-online.target
+
+[Service]
+Type=notify
+User=caddy
+Group=caddy
+ExecStart=/usr/local/bin/caddy run --environ --config /etc/caddy/Caddyfile --adapter caddyfile
+ExecReload=/usr/local/bin/caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile --force
+TimeoutStopSec=5s
+LimitNOFILE=1048576
+Restart=on-failure
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+systemctl daemon-reload
 systemctl enable caddy
 systemctl restart caddy
 
