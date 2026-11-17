@@ -23,8 +23,11 @@
     <label for="public_key">SSH public key</label>
     <textarea id="public_key" name="public_key" placeholder="ssh-ed25519 AAAA... you@laptop" required>{{ public_key }}</textarea>
     <p class="muted">
-      No key yet? Run <code>ssh-keygen -t ed25519</code>, then paste the contents of
-      <code>~/.ssh/id_ed25519.pub</code> (the file ending in <code>.pub</code> — never the private one).
+      Make a key just for this workshop — run:<br>
+      <code>ssh-keygen -t ed25519 -f ~/.ssh/dokku-workshop -N ""</code><br>
+      then paste the contents of <code>~/.ssh/dokku-workshop.pub</code>
+      (the file ending in <code>.pub</code> — never the private one).
+      On Windows, run it in Git Bash or WSL.
     </p>
 
     <p style="margin-top:18px"><button type="submit">Claim my VM</button></p>
