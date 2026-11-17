@@ -132,9 +132,17 @@ class DryRunKeyctl:
     def __init__(self, settings: Settings):
         self._dir = settings.dryrun_dir
         self._pool_file = self._dir / "vm_pool.json"
-        self._auth_file = self._dir / "authorized.json"
+        # The pool seed is read-only and shipped with the app. Mutable state
+        # (authorizations) must go somewhere writable: under buildpack runtimes
+        # the app dir (/workspace) is read-only at launch, so default to a
+        # writable temp dir. Override with DRYRUN_WRITE_DIR if needed.
+        write_dir = Path(
+            os.environ.get("DRYRUN_WRITE_DIR")
+            or (Path(tempfile.gettempdir()) / "dokku-workshop-dryrun")
+        )
+        write_dir.mkdir(parents=True, exist_ok=True)
+        self._auth_file = write_dir / "authorized.json"
         self._lock = threading.Lock()
-        self._dir.mkdir(parents=True, exist_ok=True)
         if not self._auth_file.exists():
             self._auth_file.write_text("[]\n")
 

@@ -44,6 +44,7 @@ def client(tmp_path, ssh_keypair, monkeypatch):
     monkeypatch.setenv("DRY_RUN", "1")
     monkeypatch.setenv("DATABASE_URL", DSN)
     monkeypatch.setenv("DRYRUN_DIR", str(dry))
+    monkeypatch.setenv("DRYRUN_WRITE_DIR", str(dry))
     monkeypatch.setenv("WORKSHOP_CODE", "dokku2026")
     monkeypatch.setenv("SECRET_KEY", "test-secret")
     monkeypatch.setenv("ADMIN_USER", "admin")
