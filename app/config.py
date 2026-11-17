@@ -18,6 +18,24 @@ def _bool(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _keyctl_private_key() -> str:
+    """The app's keyctl private key.
+
+    Prefer KEYCTL_PRIVATE_KEY_B64 — a single-line base64 of the key — because
+    many secret UIs/stores flatten the newlines of a multi-line value, which
+    makes OpenSSH reject the key ("invalid format"). The base64 form has no
+    newlines to lose. Falls back to the raw multi-line KEYCTL_PRIVATE_KEY.
+    """
+    b64 = (os.environ.get("KEYCTL_PRIVATE_KEY_B64") or "").strip()
+    if b64:
+        import base64 as _b64
+        try:
+            return _b64.b64decode(b64, validate=False).decode("utf-8")
+        except Exception:  # noqa: BLE001 - fall back to the raw key
+            pass
+    return os.environ.get("KEYCTL_PRIVATE_KEY", "")
+
+
 @dataclass(frozen=True)
 class Settings:
     database_url: str
@@ -57,7 +75,7 @@ def load_settings() -> "Settings":
         jump_public_ip=os.environ.get("JUMP_PUBLIC_IP", "203.0.113.10"),
         base_domain=os.environ.get("BASE_DOMAIN", "workshop.example.com"),
         keyadmin_user=os.environ.get("KEYADMIN_USER", "keyadmin"),
-        keyctl_private_key=os.environ.get("KEYCTL_PRIVATE_KEY", ""),
+        keyctl_private_key=_keyctl_private_key(),
         keyctl_known_hosts=os.environ.get("KEYCTL_KNOWN_HOSTS", ""),
         keyctl_timeout=int(os.environ.get("KEYCTL_TIMEOUT", "20")),
         dry_run=_bool("DRY_RUN", default=False),
