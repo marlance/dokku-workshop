@@ -29,6 +29,16 @@ resource "civo_firewall" "jump" {
     action     = "allow"
   }
 
+  # Second SSH port for the signup app only. Railway (and some other hosts)
+  # drop outbound connections to port 22; attendees keep using 22.
+  ingress_rule {
+    label      = "ssh-app"
+    protocol   = "tcp"
+    port_range = "2222"
+    cidr       = ["0.0.0.0/0"]
+    action     = "allow"
+  }
+
   ingress_rule {
     label      = "http"
     protocol   = "tcp"

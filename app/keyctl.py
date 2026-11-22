@@ -69,6 +69,7 @@ class SSHKeyctl:
         return [
             "ssh",
             "-i", self._key_path,
+            "-p", str(self._s.keyctl_port),
             "-o", "BatchMode=yes",
             "-o", "StrictHostKeyChecking=yes",
             "-o", f"UserKnownHostsFile={self._known_hosts_path}",
@@ -106,7 +107,7 @@ class SSHKeyctl:
                 err = (proc.stderr or "").strip().splitlines()
                 detail = f" ssh said: {err[-1][:200]}" if err else ""
                 msg = (f"keyctl failed (rc={proc.returncode}) talking to "
-                       f"{self._s.keyadmin_user}@{self._s.jump_host}.{detail}")
+                       f"{self._s.keyadmin_user}@{self._s.jump_host}:{self._s.keyctl_port}.{detail}")
             raise KeyctlError(msg)
         return payload
 

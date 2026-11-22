@@ -52,6 +52,9 @@ class Settings:
     keyctl_private_key: str
     keyctl_known_hosts: str
     keyctl_timeout: int
+    # Port the app dials on the jump host. 22 is blocked outbound on some
+    # hosts (Railway), so the jump also listens on 2222 for the app.
+    keyctl_port: int
 
     dry_run: bool
     rate_limit_per_min: int
@@ -78,6 +81,7 @@ def load_settings() -> "Settings":
         keyctl_private_key=_keyctl_private_key(),
         keyctl_known_hosts=os.environ.get("KEYCTL_KNOWN_HOSTS", ""),
         keyctl_timeout=int(os.environ.get("KEYCTL_TIMEOUT", "20")),
+        keyctl_port=int(os.environ.get("KEYCTL_PORT", "22")),
         dry_run=_bool("DRY_RUN", default=False),
         rate_limit_per_min=int(os.environ.get("RATE_LIMIT_PER_MIN", "10")),
         dryrun_dir=Path(os.environ.get("DRYRUN_DIR", str(repo_root / "dryrun"))),

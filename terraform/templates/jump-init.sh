@@ -12,9 +12,13 @@ apt-get update -y
 apt-get install -y python3 curl
 
 # --- Caddy (static binary — avoids the flaky cloudsmith apt-repo GPG) ------ #
-curl -fsSL -o /tmp/caddy "https://caddyserver.com/api/download?os=linux&arch=amd64"
+# Pinned GitHub release. caddyserver.com/api/download now answers 401
+# ("Please log in or use an API key"), which aborted this script under set -e.
+curl -fsSL -o /tmp/caddy.tgz \
+  "https://github.com/caddyserver/caddy/releases/download/v2.11.9/caddy_2.11.9_linux_amd64.tar.gz"
+tar -xzf /tmp/caddy.tgz -C /tmp caddy
 install -m 0755 /tmp/caddy /usr/local/bin/caddy
-rm -f /tmp/caddy
+rm -f /tmp/caddy /tmp/caddy.tgz
 id caddy >/dev/null 2>&1 || useradd --system --home /var/lib/caddy --create-home --shell /usr/sbin/nologin caddy
 install -d -o caddy -g caddy -m 0755 /etc/caddy /var/lib/caddy
 install -o root -g root -m 0644 /etc/workshop/Caddyfile /etc/caddy/Caddyfile
@@ -106,6 +110,21 @@ chmod 755 /usr/local/bin/workshop-check
 if ! grep -q '^AllowTcpForwarding' /etc/ssh/sshd_config; then
   echo 'AllowTcpForwarding yes' >> /etc/ssh/sshd_config
 fi
-systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true
+
+# Listen on 2222 as well as 22: the signup app's host may block outbound 22.
+# Keys only; Civo's first-boot script turns password logins on, turn them off.
+cat > /etc/ssh/sshd_config.d/10-workshop.conf <<'SSHD'
+Port 22
+Port 2222
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitRootLogin prohibit-password
+SSHD
+sshd -t
+# Ubuntu 24.04 runs sshd from ssh.socket; the port list comes from a
+# generator that only re-reads sshd_config on daemon-reload.
+systemctl daemon-reload
+systemctl restart ssh.socket 2>/dev/null || true
+systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || true
 
 echo "jump host init complete"
