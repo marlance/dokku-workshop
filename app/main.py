@@ -6,6 +6,7 @@ claims a free VM (SKIP LOCKED) -> authorizes the key on the jump host via keyctl
 """
 from __future__ import annotations
 
+import asyncio
 import csv
 import io
 from contextlib import asynccontextmanager
@@ -36,7 +37,7 @@ async def lifespan(app: FastAPI):
     # In dry-run, seed the VM table from the fake pool so the app is usable
     # immediately. In production the admin clicks "Sync" (or we sync on boot too).
     try:
-        synced = await db.sync_pool(keyctl.pool())
+        synced = await db.sync_pool(await asyncio.to_thread(keyctl.pool))
     except Exception:  # noqa: BLE001 - never block startup on a sync hiccup
         synced = 0
 
@@ -158,7 +159,9 @@ async def signup(
 
     label = vm.vm_user  # matches ^[a-z0-9-]{1,32}$
     try:
-        app_state.keyctl.add(vm.vm_user, label, key.normalized)
+        # ssh to the jump host takes seconds; run it off the event loop so
+        # simultaneous signups proceed in parallel instead of queueing.
+        await asyncio.to_thread(app_state.keyctl.add, vm.vm_user, label, key.normalized)
     except KeyctlError as exc:
         await db.release_vm(vm.vm_user)
         return fail(f"Could not authorize your key ({exc}). Please try again or ask the instructor.",
@@ -197,7 +200,8 @@ async def admin_sync(request: Request, csrf_token: str = Form("", alias="_csrf")
     sec: Security = request.app.state.security
     sec.check_admin(request)
     sec.verify_csrf(request.cookies.get(CSRF_COOKIE), csrf_token)
-    n = await request.app.state.db.sync_pool(request.app.state.keyctl.pool())
+    n = await request.app.state.db.sync_pool(
+        await asyncio.to_thread(request.app.state.keyctl.pool))
     return await _admin_render(request, notice=f"Synced {n} VMs from the pool.")
 
 
@@ -207,7 +211,7 @@ async def admin_release(request: Request, vm_user: str, csrf_token: str = Form("
     sec.check_admin(request)
     sec.verify_csrf(request.cookies.get(CSRF_COOKIE), csrf_token)
     try:
-        request.app.state.keyctl.remove(vm_user, vm_user)
+        await asyncio.to_thread(request.app.state.keyctl.remove, vm_user, vm_user)
     except KeyctlError as exc:
         return await _admin_render(request, notice=f"keyctl remove warned: {exc}")
     await request.app.state.db.release_vm(vm_user)
@@ -220,7 +224,7 @@ async def admin_reconcile(request: Request):
     sec.check_admin(request)
     db: Database = request.app.state.db
     try:
-        authed = {a["vm_user"] for a in request.app.state.keyctl.list()}
+        authed = {a["vm_user"] for a in await asyncio.to_thread(request.app.state.keyctl.list)}
     except KeyctlError as exc:
         return await _admin_render(request, notice=f"Could not list keyctl authorizations: {exc}")
     taken = {v.vm_user for v in await db.list_vms() if v.status == "taken"}

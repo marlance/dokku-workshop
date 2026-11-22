@@ -83,6 +83,8 @@ def load_settings() -> "Settings":
         keyctl_timeout=int(os.environ.get("KEYCTL_TIMEOUT", "20")),
         keyctl_port=int(os.environ.get("KEYCTL_PORT", "22")),
         dry_run=_bool("DRY_RUN", default=False),
-        rate_limit_per_min=int(os.environ.get("RATE_LIMIT_PER_MIN", "10")),
+        # A whole room shares one public IP (venue Wi-Fi), so this must comfortably
+        # exceed the attendee count or the tail of the room gets 429s.
+        rate_limit_per_min=int(os.environ.get("RATE_LIMIT_PER_MIN", "120")),
         dryrun_dir=Path(os.environ.get("DRYRUN_DIR", str(repo_root / "dryrun"))),
     )
