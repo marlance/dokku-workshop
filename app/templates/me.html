@@ -60,11 +60,13 @@ Host dokku-{{ user_nn }}
   <pre id="cheat">ssh dokku@dokku-{{ user_nn }} apps:create myapp
 git remote add dokku dokku@dokku-{{ user_nn }}:myapp
 git push dokku main
-ssh dokku@dokku-{{ user_nn }} domains:set myapp myapp-{{ user_nn }}.{{ base_domain }}
 ssh dokku@dokku-{{ user_nn }} config:set myapp BG_COLOR=tomato
 ssh dokku@dokku-{{ user_nn }} logs myapp -t
 ssh dokku@dokku-{{ user_nn }} scheduler:set myapp-k8s selected k3s</pre>
 </div>
+
+<p class="muted">Any app you create is live at <code>http://&lt;app&gt;-{{ user_nn }}.{{ base_domain }}</code> as soon as it deploys —
+  no domain commands needed. (Please don't run <code>domains:set</code>; it takes the app off that address.)</p>
 
 <p class="muted" style="margin-top:28px">Stuck? Raise your hand — the instructor or a helper will come over.</p>
 {% endif %}
