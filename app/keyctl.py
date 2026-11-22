@@ -99,7 +99,15 @@ class SSHKeyctl:
             ) from exc
         if proc.returncode != 0 or (isinstance(payload, dict) and payload.get("ok") is False):
             msg = payload.get("error") if isinstance(payload, dict) else None
-            raise KeyctlError(msg or f"keyctl failed (rc={proc.returncode}).")
+            if not msg:
+                # rc=255 is ssh itself failing (DNS, network, host key, bad
+                # key). Its stderr says which, so surface the last line —
+                # it holds no secrets, only the reason and the target host.
+                err = (proc.stderr or "").strip().splitlines()
+                detail = f" ssh said: {err[-1][:200]}" if err else ""
+                msg = (f"keyctl failed (rc={proc.returncode}) talking to "
+                       f"{self._s.keyadmin_user}@{self._s.jump_host}.{detail}")
+            raise KeyctlError(msg)
         return payload
 
     def pool(self) -> list[dict]:
