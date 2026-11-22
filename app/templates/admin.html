@@ -31,7 +31,7 @@
 <h2>VMs</h2>
 <table>
   <thead>
-    <tr><th>User</th><th>IP</th><th>Status</th><th>Attendee</th><th>Assigned</th><th></th></tr>
+    <tr><th>User</th><th>IP</th><th>Status</th><th>Access</th><th>Attendee</th><th>Assigned</th><th></th></tr>
   </thead>
   <tbody>
   {% for v in vms %}
@@ -39,6 +39,7 @@
       <td>{{ v.vm_user }}</td>
       <td>{{ v.vm_ip }}</td>
       <td class="{{ v.status }}">{{ v.status }}</td>
+      <td{% if v.status == "taken" and v.access == "failed" %} class="taken" title="{{ v.key_error or '' }}"{% endif %}>{% if v.status == "taken" %}{{ v.access }}{% endif %}</td>
       <td>{{ v.attendee or "" }}</td>
       <td class="muted">{{ v.assigned_at or "" }}</td>
       <td>
@@ -53,7 +54,7 @@
     </tr>
   {% endfor %}
   {% if not vms %}
-    <tr><td colspan="6" class="muted">No VMs yet. Click “Sync pool from keyctl”.</td></tr>
+    <tr><td colspan="7" class="muted">No VMs yet. Click “Sync pool from keyctl”.</td></tr>
   {% endif %}
   </tbody>
 </table>

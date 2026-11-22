@@ -71,6 +71,7 @@ class SSHKeyctl:
             "-i", self._key_path,
             "-p", str(self._s.keyctl_port),
             "-o", "BatchMode=yes",
+            "-o", "AddressFamily=inet",
             "-o", "StrictHostKeyChecking=yes",
             "-o", f"UserKnownHostsFile={self._known_hosts_path}",
             "-o", f"ConnectTimeout={max(1, self._s.keyctl_timeout // 2)}",

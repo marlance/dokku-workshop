@@ -32,6 +32,29 @@ def _csrf(html: str) -> str:
     return m.group(1)
 
 
+def _wait_state(client, loc: str, want=("ready", "failed"), timeout: float = 8.0) -> str:
+    """Poll the status endpoint until key setup settles."""
+    import time
+    deadline = time.monotonic() + timeout
+    state = "?"
+    while time.monotonic() < deadline:
+        state = client.get(loc + "/status").json()["state"]
+        if state in want:
+            return state
+        time.sleep(0.05)
+    return state
+
+
+def _signup(client, name="Ada", key=None):
+    token = _csrf(client.get("/").text)
+    r = client.post("/signup", follow_redirects=False, data={
+        "name": name, "access_code": "dokku2026",
+        "public_key": key or client.pubkey, "_csrf": token,
+    })
+    assert r.status_code == 303, r.text[:300]
+    return r.headers["location"]
+
+
 @pytest.fixture
 def client(tmp_path, ssh_keypair, monkeypatch):
     dry = tmp_path / "dry"
@@ -73,6 +96,8 @@ def test_good_signup_lands_on_personal_page(client):
     loc = r.headers["location"]
     assert loc.startswith("/me/")
 
+    # Key setup runs in the background; the page is usable once it is ready.
+    assert _wait_state(client, loc) == "ready"
     page = client.get(loc)
     assert page.status_code == 200
     assert "user0" in page.text
@@ -118,3 +143,110 @@ def test_admin_requires_auth(client):
     ok = client.get("/admin", auth=("admin", "pw"))
     assert ok.status_code == 200
     assert "Workshop admin" in ok.text
+
+
+# --------------------------------------------------------------------------- #
+# background key setup
+# --------------------------------------------------------------------------- #
+@requires_pg
+def test_signup_returns_before_key_setup_finishes(client):
+    """The form must not wait for the jump host; the page shows a waiting state."""
+    import threading
+    gate = threading.Event()
+    real_add = client.app.state.keyctl.add
+
+    def slow_add(*a, **kw):
+        gate.wait(5)
+        return real_add(*a, **kw)
+
+    client.app.state.keyctl.add = slow_add
+    try:
+        loc = _signup(client)                       # returns while add is blocked
+        assert client.get(loc + "/status").json()["state"] == "preparing"
+        page = client.get(loc)
+        assert "Setting up your SSH access" in page.text
+        assert 'http-equiv="refresh"' in page.text
+        assert "ssh dokku@dokku-user0" not in page.text   # no instructions yet
+    finally:
+        gate.set()
+    assert _wait_state(client, loc) == "ready"
+    assert "ssh dokku@dokku-user0" in client.get(loc).text
+
+
+@requires_pg
+def test_key_setup_failure_keeps_vm_and_offers_retry(client, monkeypatch):
+    import app.main as main
+    from app.keyctl import KeyctlError
+    monkeypatch.setattr(main, "KEY_ATTEMPTS", 1)
+    real_add = client.app.state.keyctl.add
+
+    def boom(*a, **kw):
+        raise KeyctlError("jump host unreachable")
+
+    client.app.state.keyctl.add = boom
+    loc = _signup(client)
+    assert _wait_state(client, loc) == "failed"
+    page = client.get(loc)
+    assert "jump host unreachable" in page.text
+    assert "Try again" in page.text
+    # The VM is still theirs: nobody else can be handed it.
+    admin = client.get("/admin", auth=("admin", "pw")).text
+    assert "1 taken" in admin and "failed" in admin
+
+    client.app.state.keyctl.add = real_add
+    page = client.get(loc)          # fresh token (the admin page reset the cookie)
+    r = client.post(loc + "/retry", follow_redirects=False,
+                    data={"_csrf": _csrf(page.text)})
+    assert r.status_code == 303
+    assert _wait_state(client, loc) == "ready"
+
+
+@requires_pg
+def test_preparing_claims_resume_after_restart(tmp_path, ssh_keypair, monkeypatch):
+    """A claim left 'preparing' by a stopped process is finished on next boot."""
+    import json as _json
+    import psycopg
+    dry = tmp_path / "dry"
+    dry.mkdir()
+    (dry / "vm_pool.json").write_text(_json.dumps([{"user": "user01", "ip": "10.0.0.11"}]))
+    for k, v in {"DRY_RUN": "1", "DATABASE_URL": DSN, "DRYRUN_DIR": str(dry),
+                 "DRYRUN_WRITE_DIR": str(dry), "SECRET_KEY": "s",
+                 "ADMIN_USER": "admin", "ADMIN_PASSWORD": "pw"}.items():
+        monkeypatch.setenv(k, v)
+    _reset_db()
+    with psycopg.connect(DSN, autocommit=True) as conn:
+        conn.execute(
+            "INSERT INTO vms (vm_user, vm_ip, status, attendee, key_fingerprint, label,"
+            " token, assigned_at, key_state, public_key)"
+            " VALUES ('user01','10.0.0.11','taken','Ada','fp','user01','tok123', now(),"
+            " 'preparing', %s)", (ssh_keypair,))
+    from fastapi.testclient import TestClient
+    from app.main import app
+    with TestClient(app) as c:
+        assert _wait_state(c, "/me/tok123") == "ready"
+        assert _json.loads((dry / "authorized.json").read_text())[0]["vm_user"] == "user01"
+
+
+@requires_pg
+def test_release_during_setup_does_not_leave_key_behind(client):
+    import threading
+    gate = threading.Event()
+    real_add = client.app.state.keyctl.add
+
+    def slow_add(*a, **kw):
+        gate.wait(5)
+        return real_add(*a, **kw)
+
+    client.app.state.keyctl.add = slow_add
+    loc = _signup(client)
+    admin = client.get("/admin", auth=("admin", "pw"))
+    r = client.post("/admin/release/user01", auth=("admin", "pw"),
+                    data={"_csrf": _csrf(admin.text)})
+    assert r.status_code == 200 and "Released user01" in r.text
+    gate.set()                                   # the add now lands on a free VM
+    import time
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline and client.app.state.keyctl.list():
+        time.sleep(0.05)
+    assert client.app.state.keyctl.list() == []
+    assert client.get(loc).status_code == 404    # their link is gone with the claim

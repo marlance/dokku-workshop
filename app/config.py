@@ -55,6 +55,8 @@ class Settings:
     # Port the app dials on the jump host. 22 is blocked outbound on some
     # hosts (Railway), so the jump also listens on 2222 for the app.
     keyctl_port: int
+    # How many jump-host calls the background key setup runs at once.
+    keyctl_concurrency: int
 
     dry_run: bool
     rate_limit_per_min: int
@@ -80,7 +82,8 @@ def load_settings() -> "Settings":
         keyadmin_user=os.environ.get("KEYADMIN_USER", "keyadmin"),
         keyctl_private_key=_keyctl_private_key(),
         keyctl_known_hosts=os.environ.get("KEYCTL_KNOWN_HOSTS", ""),
-        keyctl_timeout=int(os.environ.get("KEYCTL_TIMEOUT", "20")),
+        keyctl_timeout=int(os.environ.get("KEYCTL_TIMEOUT", "45")),
+        keyctl_concurrency=max(1, int(os.environ.get("KEYCTL_CONCURRENCY", "3"))),
         keyctl_port=int(os.environ.get("KEYCTL_PORT", "22")),
         dry_run=_bool("DRY_RUN", default=False),
         # A whole room shares one public IP (venue Wi-Fi), so this must comfortably

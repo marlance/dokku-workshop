@@ -30,6 +30,14 @@ class VM:
     label: str | None
     token: str | None
     assigned_at: object | None
+    key_state: str | None = None   # 'preparing' | 'ready' | 'failed' | None (= ready)
+    key_error: str | None = None
+    public_key: str | None = None
+
+    @property
+    def access(self) -> str:
+        """Effective key state for a taken VM (legacy NULL counts as ready)."""
+        return self.key_state or "ready"
 
 
 def _vm(row: dict) -> VM:
@@ -107,12 +115,17 @@ class Database:
         return out
 
     # -- the important one -------------------------------------------------- #
-    async def claim_free_vm(self, attendee: str, fingerprint: str) -> VM:
+    async def claim_free_vm(self, attendee: str, fingerprint: str,
+                            public_key: str | None = None) -> VM:
         """Atomically claim one free VM for this attendee.
 
         FOR UPDATE SKIP LOCKED means concurrent callers skip rows already locked
         by another in-flight transaction, so no two attendees get the same VM.
+
+        With ``public_key`` the row starts in key_state 'preparing': the key is
+        authorized on the jump host afterwards by the background worker.
         """
+        key_state = "preparing" if public_key else "ready"
         token = secrets.token_urlsafe(16)
         async with self.pool.connection() as conn:
             async with conn.transaction():
@@ -133,10 +146,11 @@ class Database:
                     """
                     UPDATE vms
                     SET status = 'taken', attendee = %s, key_fingerprint = %s,
-                        label = %s, token = %s, assigned_at = now()
+                        label = %s, token = %s, assigned_at = now(),
+                        key_state = %s, key_error = NULL, public_key = %s
                     WHERE vm_user = %s
                     """,
-                    (attendee, fingerprint, vm_user, token, vm_user),
+                    (attendee, fingerprint, vm_user, token, key_state, public_key, vm_user),
                 )
                 cur = await conn.execute("SELECT * FROM vms WHERE vm_user = %s", (vm_user,))
                 return _vm(await cur.fetchone())
@@ -147,8 +161,54 @@ class Database:
                 """
                 UPDATE vms
                 SET status = 'free', attendee = NULL, key_fingerprint = NULL,
-                    label = NULL, token = NULL, assigned_at = NULL
+                    label = NULL, token = NULL, assigned_at = NULL,
+                    key_state = NULL, key_error = NULL, public_key = NULL
                 WHERE vm_user = %s
                 """,
                 (vm_user,),
             )
+
+    # -- background key setup ------------------------------------------------ #
+    async def set_key_state(self, vm_user: str, token: str, state: str,
+                            error: str | None = None) -> bool:
+        """Record the outcome of key setup for one claim.
+
+        Matches on the claim's token as well as the VM, so a result that
+        arrives after the VM was released (or handed to someone else) is
+        dropped instead of overwriting the new owner's state. Returns whether
+        the claim still existed.
+        """
+        async with self.pool.connection() as conn:
+            cur = await conn.execute(
+                """
+                UPDATE vms SET key_state = %s, key_error = %s
+                WHERE vm_user = %s AND token = %s AND status = 'taken'
+                RETURNING vm_user
+                """,
+                (state, error, vm_user, token),
+            )
+            return await cur.fetchone() is not None
+
+    async def list_preparing(self) -> list[VM]:
+        """Claims whose key setup has not finished (e.g. app restarted mid-way)."""
+        async with self.pool.connection() as conn:
+            cur = await conn.execute(
+                "SELECT * FROM vms WHERE status = 'taken' AND key_state = 'preparing' "
+                "ORDER BY assigned_at"
+            )
+            rows = await cur.fetchall()
+        return [_vm(r) for r in rows]
+
+    async def mark_retry(self, token: str) -> VM | None:
+        """Move a failed claim back to 'preparing'. None if it wasn't failed."""
+        async with self.pool.connection() as conn:
+            cur = await conn.execute(
+                """
+                UPDATE vms SET key_state = 'preparing', key_error = NULL
+                WHERE token = %s AND status = 'taken' AND key_state = 'failed'
+                RETURNING *
+                """,
+                (token,),
+            )
+            row = await cur.fetchone()
+        return _vm(row) if row else None

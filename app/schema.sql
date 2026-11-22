@@ -15,3 +15,11 @@ CREATE TABLE IF NOT EXISTS vms (
 CREATE INDEX IF NOT EXISTS idx_vms_status ON vms (status);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_vms_fingerprint
     ON vms (key_fingerprint) WHERE key_fingerprint IS NOT NULL;
+
+-- Key setup runs in the background after a VM is claimed, so signup returns
+-- immediately. NULL key_state on a taken row means "ready" (rows from before
+-- this column existed).
+ALTER TABLE vms ADD COLUMN IF NOT EXISTS key_state TEXT
+    CHECK (key_state IN ('preparing', 'ready', 'failed'));
+ALTER TABLE vms ADD COLUMN IF NOT EXISTS key_error  TEXT;
+ALTER TABLE vms ADD COLUMN IF NOT EXISTS public_key TEXT;  -- what to authorize; public, not secret

@@ -1,6 +1,25 @@
 {% extends "base.html" %}
 {% block title %}Your VM — {{ user_nn }}{% endblock %}
+{% block head %}{% if key_state == "preparing" %}<meta http-equiv="refresh" content="3">{% endif %}{% endblock %}
 {% block body %}
+{% if key_state == "preparing" %}
+<h1>Almost there, {{ attendee }} ⏳</h1>
+<p class="lead">You are <span class="pill">{{ user_nn }}</span>. Your VM is reserved.</p>
+<div class="wait" id="key-wait">
+  <strong>Setting up your SSH access…</strong> This usually takes under a minute.
+  This page refreshes by itself — your connection details appear here when it's ready.
+</div>
+<p class="muted">You can bookmark this page now; it's yours.</p>
+{% elif key_state == "failed" %}
+<h1>One more step, {{ attendee }}</h1>
+<p class="lead">You are <span class="pill">{{ user_nn }}</span>. Your VM is reserved, but we couldn't set up your SSH access.</p>
+<div class="err">{{ key_error or "The jump host did not accept the key." }}</div>
+<form method="post" action="/me/{{ token }}/retry">
+  <input type="hidden" name="_csrf" value="{{ csrf }}">
+  <button type="submit">Try again</button>
+</form>
+<p class="muted" style="margin-top:16px">If it fails again, raise your hand — the instructor can fix it from the admin page.</p>
+{% else %}
 <h1>You're set, {{ attendee }} 👋</h1>
 <p class="lead">You are <span class="pill">{{ user_nn }}</span>. Bookmark this page — reopen it any time.</p>
 
@@ -48,4 +67,5 @@ ssh dokku@dokku-{{ user_nn }} scheduler:set myapp-k8s selected k3s</pre>
 </div>
 
 <p class="muted" style="margin-top:28px">Stuck? Raise your hand — the instructor or a helper will come over.</p>
+{% endif %}
 {% endblock %}
