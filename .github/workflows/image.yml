@@ -1,17 +1,13 @@
-# Builds the signup app image on every push to main that touches the app,
-# pushes it to GitHub's container registry, then records the new tag in
+# Builds the signup app image on EVERY push to main, pushes it to GitHub's
+# container registry tagged with the full commit SHA, then records that tag in
 # deploy/values.yaml. ArgoCD sees that commit and rolls the app out.
+#
+# The tag-recording commit carries [skip ci], so it does not trigger another build.
 name: image
 
 on:
   push:
     branches: [main]
-    paths:
-      - "app/**"
-      - "dryrun/**"
-      - "Dockerfile"
-      - "requirements.txt"
-      - ".github/workflows/image.yml"
   workflow_dispatch:
 
 concurrency:
@@ -30,7 +26,7 @@ jobs:
 
       - name: Compute tag
         id: tag
-        run: echo "tag=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+        run: echo "tag=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
 
       - uses: docker/login-action@v3
         with:

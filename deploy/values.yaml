@@ -10,7 +10,7 @@ fullnameOverride: dokku-workshop
 image:
   repository: ghcr.io/marlance/dokku-workshop
   # Updated automatically by .github/workflows/image.yml after each build.
-  # To pin or roll back by hand, set it to any pushed tag (a 7-character commit id).
+  # To pin or roll back by hand, set it to any pushed tag (a full commit SHA).
   tag: "78e86c7" # image-tag
   pullPolicy: Always
 

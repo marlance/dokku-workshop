@@ -9,14 +9,14 @@ The app runs on the `konduit-mum1-kubefunk` cluster and is deployed by ArgoCD.
 ## How a change reaches the cluster
 
 1. Push to `main`.
-2. If the app code changed, `.github/workflows/image.yml` builds the image,
-   pushes `ghcr.io/marlance/dokku-workshop:<commit>` and writes that tag into
+2. `.github/workflows/image.yml` builds the image on every push, pushes
+   `ghcr.io/marlance/dokku-workshop:<full commit SHA>` and writes that tag into
    `deploy/values.yaml`.
 3. ArgoCD notices the change to `deploy/values.yaml` and rolls the app
    (within about three minutes).
 
 To change a setting, edit `deploy/values.yaml` and push. To roll back, set
-`image.tag` to an earlier commit id and push.
+`image.tag` to an earlier commit SHA and push.
 
 ## Secrets
 
