@@ -35,17 +35,26 @@ securityContext:
   runAsUser: 10001
   runAsGroup: 10001
 
+# No CPU or memory cap: a full room signing up at once must not be throttled
+# or OOM-killed. "limits: null" is deliberate; leaving the key out would let
+# the chart's default cap (500m / 512Mi) apply instead. Requests reserve a
+# sensible share of the node for the app.
 resources:
   requests:
-    cpu: 250m
-    memory: 256Mi
-  limits:
-    cpu: "1"
-    memory: 1Gi
+    cpu: 500m
+    memory: 512Mi
+  limits: null
 
 env:
   - name: PORT
     value: "8080"
+
+  # Signup rate limit, per client IP per minute. A whole room shares one
+  # public IP on venue Wi-Fi, so this is set far above any attendee count,
+  # which in practice switches the limit off. (Do not set 0: that blocks
+  # every signup.)
+  - name: RATE_LIMIT_PER_MIN
+    value: "100000"
 
   # ---- Workshop topology (not secret) ----
   - name: JUMP_HOST
