@@ -119,6 +119,10 @@ Port 2222
 PasswordAuthentication no
 KbdInteractiveAuthentication no
 PermitRootLogin prohibit-password
+# A whole room connects at once (ssh, git push). The default 10:30:100 starts
+# dropping new connections past 10 that are still logging in; with 15 parallel
+# logins that was 1-2 "Connection closed" errors per round.
+MaxStartups 300:30:600
 SSHD
 sshd -t
 # Ubuntu 24.04 runs sshd from ssh.socket; the port list comes from a
