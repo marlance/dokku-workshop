@@ -56,10 +56,14 @@ env:
     value: kuberocket.com
   - name: KEYADMIN_USER
     value: keyadmin
-  # Pinned host key of the jump host. Re-pin whenever the jump is rebuilt:
-  #   ssh-keyscan -t ed25519 jump.kuberocket.com
+  # The app reaches the jump host on 2222 (it also listens on 22).
+  - name: KEYCTL_PORT
+    value: "2222"
+  # Pinned host key of the jump host, keyed for port 2222 as "[host]:port".
+  # Re-pin whenever the jump is rebuilt:
+  #   ssh-keyscan -p 2222 -t ed25519 jump.kuberocket.com
   - name: KEYCTL_KNOWN_HOSTS
-    value: jump.kuberocket.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBN+qB4cGyHsDSzvqedrjm7CoHNsocyBNH7XKsAIz0iB
+    value: "[jump.kuberocket.com]:2222 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBN+qB4cGyHsDSzvqedrjm7CoHNsocyBNH7XKsAIz0iB"
 
   # ---- Secrets, read from the Kubernetes secret "dokku-workshop-env" ----
   - name: DATABASE_URL

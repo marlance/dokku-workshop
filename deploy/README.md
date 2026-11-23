@@ -35,5 +35,5 @@ After changing `dokku-workshop-env`, restart the app so it reads the new values:
 ## When the jump host is rebuilt
 
 Its address and host key change. Update `JUMP_PUBLIC_IP` and
-`KEYCTL_KNOWN_HOSTS` in `deploy/values.yaml` (`ssh-keyscan -t ed25519
+`KEYCTL_KNOWN_HOSTS` in `deploy/values.yaml` (`ssh-keyscan -p 2222 -t ed25519
 jump.kuberocket.com`) and replace `KEYCTL_PRIVATE_KEY_B64` in the secret.
