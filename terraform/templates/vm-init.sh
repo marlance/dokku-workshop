@@ -4,6 +4,26 @@
 set -euo pipefail
 
 export DEBIAN_FRONTEND=noninteractive
+
+# Ubuntu starts unattended-upgrades at first boot and it holds the dpkg lock
+# for a minute or more. Any apt call during that window fails with "Could not
+# get lock", and under `set -e` that aborted this whole script: about one VM
+# in five came up without Dokku. Stop it, wait for the lock to clear, and make
+# every later apt/dpkg call (including Dokku's own bootstrap) wait instead of
+# failing.
+systemctl stop unattended-upgrades.service apt-daily.service apt-daily-upgrade.service 2>/dev/null || true
+systemctl disable --now apt-daily.timer apt-daily-upgrade.timer 2>/dev/null || true
+for _ in $(seq 1 120); do
+  if ! pgrep -x apt-get >/dev/null && ! pgrep -x dpkg >/dev/null \
+     && ! pgrep -f unattended-upgrade$ >/dev/null && ! pgrep -f 'unattended-upgrade ' >/dev/null; then
+    break
+  fi
+  sleep 5
+done
+cat > /etc/apt/apt.conf.d/99-workshop-lock-timeout <<'APT'
+DPkg::Lock::Timeout "600";
+APT
+
 apt-get update -y
 apt-get install -y curl ca-certificates wget
 
