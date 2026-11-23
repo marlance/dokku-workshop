@@ -1,0 +1,82 @@
+# Helm values for the signup app on the konduit-mum1-kubefunk cluster.
+# Chart: konstructio/konstruct-templates, path templates/konstruct-web-service.
+# ArgoCD watches this file: change it, push to main, and the app rolls out.
+#
+# NOTHING SECRET GOES IN THIS FILE. Secrets live in the Kubernetes secret
+# "dokku-workshop-env" in the dokku-workshop namespace (see deploy/README.md).
+
+fullnameOverride: dokku-workshop
+
+image:
+  repository: ghcr.io/marlance/dokku-workshop
+  # Updated automatically by .github/workflows/image.yml after each build.
+  # To pin or roll back by hand, set it to any pushed tag (a 7-character commit id).
+  tag: "latest" # image-tag
+  pullPolicy: Always
+
+# Pull secret for the private GitHub container registry.
+imagePullSecrets:
+  - name: ghcr-pull
+
+replicaCount: 1
+containerPort: 8080
+
+service:
+  port: 80
+  targetPort: 8080
+
+gateway:
+  enabled: true
+  host: dokku-workshop.mum1.apps.kubefunk.net
+
+# The image declares a named user ("app"); Kubernetes can only verify
+# runAsNonRoot against a numeric id, so state the id from the Dockerfile.
+securityContext:
+  runAsUser: 10001
+  runAsGroup: 10001
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 256Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi
+
+env:
+  - name: PORT
+    value: "8080"
+
+  # ---- Workshop topology (not secret) ----
+  - name: JUMP_HOST
+    value: jump.kuberocket.com
+  - name: JUMP_PUBLIC_IP
+    value: 212.2.249.34
+  - name: BASE_DOMAIN
+    value: kuberocket.com
+  - name: KEYADMIN_USER
+    value: keyadmin
+  # Pinned host key of the jump host. Re-pin whenever the jump is rebuilt:
+  #   ssh-keyscan -t ed25519 jump.kuberocket.com
+  - name: KEYCTL_KNOWN_HOSTS
+    value: jump.kuberocket.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBN+qB4cGyHsDSzvqedrjm7CoHNsocyBNH7XKsAIz0iB
+
+  # ---- Secrets, read from the Kubernetes secret "dokku-workshop-env" ----
+  - name: DATABASE_URL
+    valueFrom:
+      secretKeyRef: {name: dokku-workshop-env, key: DATABASE_URL}
+  - name: SECRET_KEY
+    valueFrom:
+      secretKeyRef: {name: dokku-workshop-env, key: SECRET_KEY}
+  - name: WORKSHOP_CODE
+    valueFrom:
+      secretKeyRef: {name: dokku-workshop-env, key: WORKSHOP_CODE}
+  - name: ADMIN_USER
+    valueFrom:
+      secretKeyRef: {name: dokku-workshop-env, key: ADMIN_USER}
+  - name: ADMIN_PASSWORD
+    valueFrom:
+      secretKeyRef: {name: dokku-workshop-env, key: ADMIN_PASSWORD}
+  - name: KEYCTL_PRIVATE_KEY_B64
+    valueFrom:
+      secretKeyRef: {name: dokku-workshop-env, key: KEYCTL_PRIVATE_KEY_B64}

@@ -1,0 +1,34 @@
+# ArgoCD Application for the signup app. Applied once to the cluster; after
+# that ArgoCD follows deploy/values.yaml on the main branch of this repo.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dokku-workshop
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  sources:
+    # The chart. Pinned to a commit so a change on that branch cannot alter
+    # this app unannounced; bump the commit id deliberately to take updates.
+    - repoURL: https://github.com/konstructio/konstruct-templates.git
+      targetRevision: a54a3f168277c5ae8fea3569652abfa02af2a1f1
+      path: templates/konstruct-web-service
+      helm:
+        releaseName: dokku-workshop
+        valueFiles:
+          - $values/deploy/values.yaml
+    # The values, from this repository.
+    - repoURL: https://github.com/marlance/dokku-workshop.git
+      targetRevision: main
+      ref: values
+  destination:
+    name: mum1
+    namespace: dokku-workshop
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
