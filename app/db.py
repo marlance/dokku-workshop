@@ -6,6 +6,7 @@ attendees signing up at the same instant can never be handed the same VM.
 """
 from __future__ import annotations
 
+import os
 import secrets
 from dataclasses import dataclass
 from pathlib import Path
@@ -58,8 +59,19 @@ def _vm(row: dict) -> VM:
 class Database:
     def __init__(self, dsn: str):
         # open=False so construction never blocks; we open() in the app lifespan.
-        self.pool = AsyncConnectionPool(dsn, open=False, min_size=1, max_size=10,
-                                        kwargs={"row_factory": dict_row})
+        # A whole room signs up in the same few seconds. Keep several
+        # connections warm so that burst doesn't start by opening them, and
+        # allow enough that requests queue only briefly. `check` tests a
+        # connection before handing it out, so one the server dropped while
+        # idle (overnight, or a database restart) is replaced instead of
+        # failing the next request.
+        self.pool = AsyncConnectionPool(
+            dsn, open=False,
+            min_size=int(os.environ.get("DB_POOL_MIN", "5")),
+            max_size=int(os.environ.get("DB_POOL_MAX", "20")),
+            check=AsyncConnectionPool.check_connection,
+            kwargs={"row_factory": dict_row},
+        )
 
     async def open(self) -> None:
         await self.pool.open()
