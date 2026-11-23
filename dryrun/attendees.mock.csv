@@ -1,0 +1,18 @@
+# Mock registration list for testing. Paste into /admin -> Registered attendees.
+# Replace with the real list (tick "Replace the whole list") before the workshop.
+email,name
+ada@example.com,Ada Lovelace
+grace@example.com,Grace Hopper
+linus@example.com,Linus Torvalds
+margaret@example.com,Margaret Hamilton
+dennis@example.com,Dennis Ritchie
+barbara@example.com,Barbara Liskov
+ken@example.com,Ken Thompson
+radia@example.com,Radia Perlman
+alan@example.com,Alan Turing
+katherine@example.com,Katherine Johnson
+tim@example.com,Tim Berners-Lee
+hedy@example.com,Hedy Lamarr
+guido@example.com,Guido van Rossum
+frances@example.com,Frances Allen
+edsger@example.com,Edsger Dijkstra
