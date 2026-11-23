@@ -23,3 +23,16 @@ ALTER TABLE vms ADD COLUMN IF NOT EXISTS key_state TEXT
     CHECK (key_state IN ('preparing', 'ready', 'failed'));
 ALTER TABLE vms ADD COLUMN IF NOT EXISTS key_error  TEXT;
 ALTER TABLE vms ADD COLUMN IF NOT EXISTS public_key TEXT;  -- what to authorize; public, not secret
+
+-- Registered attendees. Only an email on this list can claim a VM, and each
+-- email gets at most one. Loaded from the admin page.
+CREATE TABLE IF NOT EXISTS attendees (
+    email     TEXT PRIMARY KEY,                  -- stored trimmed + lowercased
+    name      TEXT,
+    added_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE vms ADD COLUMN IF NOT EXISTS email TEXT;
+-- The one-VM-per-email rule lives here, not in app code: two simultaneous
+-- signups for the same email can both pick a free VM, but only one can commit.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_vms_email ON vms (email) WHERE email IS NOT NULL;

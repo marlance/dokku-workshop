@@ -5,6 +5,8 @@
 <p class="lead">
   <span class="pill">{{ counts.free }} free</span>
   <span class="pill">{{ counts.taken }} taken</span>
+  <span class="pill">{{ attendees | length }} registered</span>
+  <span class="pill">{{ unclaimed | length }} not claimed yet</span>
 </p>
 
 {% if notice %}<div class="notice">{{ notice }}</div>{% endif %}
@@ -31,7 +33,7 @@
 <h2>VMs</h2>
 <table>
   <thead>
-    <tr><th>User</th><th>IP</th><th>Status</th><th>Access</th><th>Attendee</th><th>Assigned</th><th></th></tr>
+    <tr><th>User</th><th>IP</th><th>Status</th><th>Access</th><th>Attendee</th><th>Email</th><th>Assigned</th><th></th></tr>
   </thead>
   <tbody>
   {% for v in vms %}
@@ -41,6 +43,7 @@
       <td class="{{ v.status }}">{{ v.status }}</td>
       <td{% if v.status == "taken" and v.access == "failed" %} class="taken" title="{{ v.key_error or '' }}"{% endif %}>{% if v.status == "taken" %}{{ v.access }}{% endif %}</td>
       <td>{{ v.attendee or "" }}</td>
+      <td>{{ v.email or "" }}</td>
       <td class="muted">{{ v.assigned_at or "" }}</td>
       <td>
         {% if v.status == "taken" %}
@@ -54,8 +57,32 @@
     </tr>
   {% endfor %}
   {% if not vms %}
-    <tr><td colspan="7" class="muted">No VMs yet. Click “Sync pool from keyctl”.</td></tr>
+    <tr><td colspan="8" class="muted">No VMs yet. Click “Sync pool from keyctl”.</td></tr>
   {% endif %}
   </tbody>
 </table>
+<h2>Registered attendees</h2>
+<p class="muted">Only these email addresses can claim a VM, one each.
+  {% if not attendees %}<strong>The list is empty, so nobody can sign up yet.</strong>{% endif %}</p>
+<div class="card">
+  <form method="post" action="/admin/attendees">
+    <input type="hidden" name="_csrf" value="{{ csrf }}">
+    <label for="attendees">Paste registrations — one per line: <code>email</code> or <code>email, name</code></label>
+    <textarea id="attendees" name="attendees" placeholder="ada@example.com, Ada Lovelace"></textarea>
+    <p><label style="font-weight:400;display:inline"><input type="checkbox" name="replace" value="1">
+      Replace the whole list (otherwise these are added). VMs already claimed are not affected.</label></p>
+    <button type="submit">Save attendees</button>
+  </form>
+</div>
+{% if attendees %}
+<table>
+  <thead><tr><th>Email</th><th>Name</th><th>VM</th></tr></thead>
+  <tbody>
+  {% for a in attendees %}
+    <tr><td>{{ a.email }}</td><td>{{ a.name or "" }}</td>
+        <td class="{{ 'taken' if a.vm_user else 'muted' }}">{{ a.vm_user or "not claimed" }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
 {% endblock %}

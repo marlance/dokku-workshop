@@ -2,7 +2,7 @@
 {% block title %}Get your workshop VM{% endblock %}
 {% block body %}
 <h1>Dokku on Civo — get your VM</h1>
-<p class="lead">Paste your SSH <strong>public</strong> key and you'll be assigned your own pre-built VM.</p>
+<p class="lead">Enter your registered email and your SSH <strong>public</strong> key and you'll be assigned your own pre-built VM.</p>
 
 {% if free is not none %}
   <p><span class="pill">{{ free }} VMs available</span></p>
@@ -14,8 +14,10 @@
   <form method="post" action="/signup" autocomplete="off">
     <input type="hidden" name="_csrf" value="{{ csrf }}">
 
-    <label for="name">Your name</label>
-    <input type="text" id="name" name="name" value="{{ name }}" maxlength="80" required>
+    <label for="email">Email you registered with</label>
+    <input type="email" id="email" name="email" value="{{ email }}" maxlength="254"
+           autocomplete="email" required>
+    <p class="muted">One VM per registered attendee.</p>
 
     <label for="access_code">Workshop access code <span class="muted">(on the slide)</span></label>
     <input type="text" id="access_code" name="access_code" required>

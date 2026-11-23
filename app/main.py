@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import csv
 import io
+import re
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Form, Request, Response, status
@@ -16,7 +17,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Red
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from .config import load_settings
-from .db import Database, NoFreeVMError
+from .db import AlreadyClaimedError, Database, NoFreeVMError, normalize_email
 from .keyctl import KeyctlError, make_keyctl
 from .security import CSRF_COOKIE, CSRF_FIELD, Security
 from .sshkeys import KeyError_, parse_public_key
@@ -54,6 +55,14 @@ async def lifespan(app: FastAPI):
     )
     app.state.synced_at_boot = synced
 
+    # Dry-run only: load the mock registration list if none exists, so local
+    # runs and tests can sign up straight away. Production lists come from /admin.
+    if settings.dry_run and not await db.list_attendees():
+        mock = settings.dryrun_dir / "attendees.mock.csv"
+        if mock.exists():
+            rows, _ = parse_attendee_lines(mock.read_text())
+            await db.add_attendees(rows)
+
     # Background key setup: bounded concurrency, and pick up any claim that was
     # still 'preparing' when the previous process stopped.
     app.state.key_sem = asyncio.Semaphore(settings.keyctl_concurrency)
@@ -77,6 +86,9 @@ app = FastAPI(title="Dokku Workshop Signup", lifespan=lifespan)
 # background key setup
 # --------------------------------------------------------------------------- #
 KEY_ATTEMPTS = 3
+
+# Deliberately loose: the registration list is the real check.
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 def schedule_key_setup(state, token: str) -> None:
@@ -151,6 +163,7 @@ def attendee_view(request: Request, vm) -> dict:
         "user_nn": nn,
         "vm_ip": vm.vm_ip,
         "attendee": vm.attendee,
+        "email": vm.email,
         "token": vm.token,
         "key_state": vm.access,
         "key_error": vm.key_error,
@@ -173,13 +186,13 @@ async def signup_form(request: Request):
     counts = await request.app.state.db.counts()
     csrf = sec.issue_csrf()
     return render(request, "signup.html", set_csrf=True, csrf=csrf,
-                  free=counts["free"], error=None, name="", public_key="")
+                  free=counts["free"], error=None, email="", public_key="")
 
 
 @app.post("/signup", response_class=HTMLResponse)
 async def signup(
     request: Request,
-    name: str = Form(""),
+    email: str = Form(""),
     public_key: str = Form(""),
     access_code: str = Form(""),
     csrf_token: str = Form("", alias="_csrf"),
@@ -195,35 +208,61 @@ async def signup(
     def fail(msg: str, code: int = 400):
         new_csrf = sec.issue_csrf()
         return render(request, "signup.html", status_code=code, set_csrf=True,
-                      csrf=new_csrf, error=msg, name=name, public_key=public_key,
+                      csrf=new_csrf, error=msg, email=email, public_key=public_key,
                       free=None)
+
+    def to_page(vm):
+        return RedirectResponse(f"/me/{vm.token}", status_code=status.HTTP_303_SEE_OTHER)
+
+    different_key = ("A VM is already assigned to this email with a different SSH key. "
+                     "Ask the instructor to release it if you need to change keys.")
 
     if not secrets_equal(access_code.strip(), settings.workshop_code):
         return fail("That access code is not right. Check the slide.")
 
-    name = (name or "").strip()[:80]
-    if not name:
-        return fail("Please enter your name.")
+    email_n = normalize_email(email)[:254]
+    if not EMAIL_RE.match(email_n):
+        return fail("Please enter the email address you registered with.")
+
+    # Only registered attendees can claim a VM.
+    registered = await db.get_attendee(email_n)
+    if registered is None:
+        return fail("That email isn't on the registration list. Use the address you "
+                    "registered with, or ask the instructor.", code=403)
 
     try:
         key = parse_public_key(public_key)
     except KeyError_ as exc:
         return fail(str(exc))
 
-    # Already registered with this key -> return the same assignment.
-    existing = await db.get_by_fingerprint(key.fingerprint)
-    if existing is not None:
-        return RedirectResponse(f"/me/{existing.token}", status_code=status.HTTP_303_SEE_OTHER)
+    # One VM per email. Same email + same key -> their existing page. A
+    # different key is refused rather than swapped in, so knowing someone's
+    # email is not enough to take over their VM.
+    mine = await db.get_by_email(email_n)
+    if mine is not None:
+        return to_page(mine) if mine.key_fingerprint == key.fingerprint else fail(different_key, 409)
+
+    # A key can't belong to two attendees either.
+    if await db.get_by_fingerprint(key.fingerprint) is not None:
+        return fail("That SSH key is already registered to another attendee. "
+                    "Generate a key of your own and paste that one.", code=409)
 
     # Claim a VM now; authorize the key in the background. The jump-host call
     # takes seconds, and the attendee doesn't need to wait on the form for it.
+    name = (registered.get("name") or "").strip() or email_n.split("@")[0]
     try:
-        vm = await db.claim_free_vm(name, key.fingerprint, key.normalized)
-    except NoFreeVMError:
+        vm = await db.claim_free_vm(name[:80], key.fingerprint, key.normalized, email_n)
+    except (NoFreeVMError, AlreadyClaimedError) as exc:
+        # Either the pool is empty, or this same email/key won a VM through a
+        # request that raced this one (the unique index let only one commit).
+        mine = await db.get_by_email(email_n)
+        if mine is not None:
+            return to_page(mine) if mine.key_fingerprint == key.fingerprint else fail(different_key, 409)
+        if isinstance(exc, AlreadyClaimedError):
+            return fail("That SSH key is already registered to another attendee.", code=409)
         return fail("All VMs are taken — please ask the instructor.", code=409)
     schedule_key_setup(app_state, vm.token)
-
-    return RedirectResponse(f"/me/{vm.token}", status_code=status.HTTP_303_SEE_OTHER)
+    return to_page(vm)
 
 
 @app.get("/me/{token}", response_class=HTMLResponse)
@@ -270,11 +309,7 @@ async def admin_home(request: Request):
     sec: Security = request.app.state.security
     sec.check_admin(request)
     db: Database = request.app.state.db
-    vms = await db.list_vms()
-    counts = await db.counts()
-    csrf = sec.issue_csrf()
-    return render(request, "admin.html", set_csrf=True, csrf=csrf,
-                  vms=vms, counts=counts, mismatches=None, notice=None)
+    return await _admin_render(request)
 
 
 @app.post("/admin/sync", response_class=HTMLResponse)
@@ -285,6 +320,44 @@ async def admin_sync(request: Request, csrf_token: str = Form("", alias="_csrf")
     n = await request.app.state.db.sync_pool(
         await asyncio.to_thread(request.app.state.keyctl.pool))
     return await _admin_render(request, notice=f"Synced {n} VMs from the pool.")
+
+
+def parse_attendee_lines(text: str) -> tuple[list[tuple[str, str | None]], list[str]]:
+    """Parse pasted registrations: one per line, "email" or "email, name" (CSV
+    with either column order works, as does a header row). Returns the rows
+    and the lines that had no usable email."""
+    rows: dict[str, str | None] = {}
+    bad: list[str] = []
+    for raw in (text or "").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = [p.strip().strip('"') for p in re.split(r"[,;\t]", line)]
+        email = next((normalize_email(p) for p in parts if EMAIL_RE.match(normalize_email(p))), None)
+        if email is None:
+            header = any(p.lower() in ("email", "e-mail", "email address", "mail") for p in parts)
+            if not header:                       # a header row is skipped silently
+                bad.append(line[:60])
+            continue
+        name = next((p for p in parts if p and normalize_email(p) != email), None)
+        rows[email[:254]] = name[:80] if name else None
+    return list(rows.items()), bad
+
+
+@app.post("/admin/attendees", response_class=HTMLResponse)
+async def admin_attendees(request: Request, csrf_token: str = Form("", alias="_csrf"),
+                          attendees: str = Form(""), replace: str = Form("")):
+    sec: Security = request.app.state.security
+    sec.check_admin(request)
+    sec.verify_csrf(request.cookies.get(CSRF_COOKIE), csrf_token)
+    rows, bad = parse_attendee_lines(attendees)
+    if not rows:
+        return await _admin_render(request, notice="No email addresses found in what you pasted.")
+    n = await request.app.state.db.add_attendees(rows, replace=bool(replace))
+    msg = f"{'Replaced the list with' if replace else 'Added or updated'} {n} registered attendees."
+    if bad:
+        msg += f" Skipped {len(bad)} line(s) with no email: {'; '.join(bad[:3])}"
+    return await _admin_render(request, notice=msg)
 
 
 @app.post("/admin/release/{vm_user}", response_class=HTMLResponse)
@@ -328,11 +401,11 @@ async def admin_export(request: Request):
     vms = await request.app.state.db.list_vms()
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(["vm_user", "vm_ip", "status", "access", "attendee", "key_fingerprint", "assigned_at"])
+    w.writerow(["vm_user", "vm_ip", "status", "access", "attendee", "email", "key_fingerprint", "assigned_at"])
     for v in vms:
         w.writerow([v.vm_user, v.vm_ip, v.status,
                     v.access if v.status == "taken" else "", v.attendee or "",
-                    v.key_fingerprint or "", v.assigned_at or ""])
+                    v.email or "", v.key_fingerprint or "", v.assigned_at or ""])
     return PlainTextResponse(
         buf.getvalue(), media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=assignments.csv"},
@@ -344,9 +417,12 @@ async def _admin_render(request: Request, notice=None, mismatches=None) -> HTMLR
     db: Database = request.app.state.db
     vms = await db.list_vms()
     counts = await db.counts()
+    attendees = await db.list_attendees()
     csrf = sec.issue_csrf()
     return render(request, "admin.html", set_csrf=True, csrf=csrf,
-                  vms=vms, counts=counts, mismatches=mismatches, notice=notice)
+                  vms=vms, counts=counts, mismatches=mismatches, notice=notice,
+                  attendees=attendees,
+                  unclaimed=[a for a in attendees if not a["vm_user"]])
 
 
 def secrets_equal(a: str, b: str) -> bool:

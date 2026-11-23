@@ -24,6 +24,10 @@ def _reset_db():
     with psycopg.connect(DSN, autocommit=True) as conn:
         conn.execute(SCHEMA_PATH.read_text())
         conn.execute("TRUNCATE vms")
+        conn.execute("TRUNCATE attendees")
+        conn.execute("INSERT INTO attendees (email, name) VALUES "
+                     "('ada@example.com', 'Ada Lovelace'), ('grace@example.com', 'Grace Hopper'),"
+                     "('linus@example.com', NULL)")
 
 
 def _csrf(html: str) -> str:
@@ -45,14 +49,26 @@ def _wait_state(client, loc: str, want=("ready", "failed"), timeout: float = 8.0
     return state
 
 
-def _signup(client, name="Ada", key=None):
+def _post_signup(client, email="ada@example.com", key=None, code="dokku2026"):
     token = _csrf(client.get("/").text)
-    r = client.post("/signup", follow_redirects=False, data={
-        "name": name, "access_code": "dokku2026",
+    return client.post("/signup", follow_redirects=False, data={
+        "email": email, "access_code": code,
         "public_key": key or client.pubkey, "_csrf": token,
     })
+
+
+def _signup(client, email="ada@example.com", key=None):
+    r = _post_signup(client, email, key)
     assert r.status_code == 303, r.text[:300]
     return r.headers["location"]
+
+
+def _new_key(tmp_path, name="k2") -> str:
+    import subprocess
+    path = tmp_path / name
+    subprocess.run(["ssh-keygen", "-t", "ed25519", "-N", "", "-C", name, "-f", str(path)],
+                   check=True, capture_output=True)
+    return (tmp_path / f"{name}.pub").read_text().strip()
 
 
 @pytest.fixture
@@ -89,7 +105,7 @@ def test_good_signup_lands_on_personal_page(client):
     token = _csrf(r.text)
 
     r = client.post("/signup", follow_redirects=False, data={
-        "name": "Ada", "access_code": "dokku2026",
+        "email": "ada@example.com", "access_code": "dokku2026",
         "public_key": client.pubkey, "_csrf": token,
     })
     assert r.status_code == 303
@@ -107,7 +123,7 @@ def test_good_signup_lands_on_personal_page(client):
 @requires_pg
 def test_same_key_returns_same_assignment(client):
     token = _csrf(client.get("/").text)
-    data = {"name": "Ada", "access_code": "dokku2026",
+    data = {"email": "ada@example.com", "access_code": "dokku2026",
             "public_key": client.pubkey, "_csrf": token}
     first = client.post("/signup", follow_redirects=False, data=data)
     second = client.post("/signup", follow_redirects=False, data=data)
@@ -118,7 +134,7 @@ def test_same_key_returns_same_assignment(client):
 def test_private_key_rejected(client):
     token = _csrf(client.get("/").text)
     r = client.post("/signup", follow_redirects=False, data={
-        "name": "Ada", "access_code": "dokku2026",
+        "email": "ada@example.com", "access_code": "dokku2026",
         "public_key": "-----BEGIN OPENSSH PRIVATE KEY-----\nxxx\n-----END OPENSSH PRIVATE KEY-----",
         "_csrf": token,
     })
@@ -130,7 +146,7 @@ def test_private_key_rejected(client):
 def test_wrong_access_code_rejected(client):
     token = _csrf(client.get("/").text)
     r = client.post("/signup", follow_redirects=False, data={
-        "name": "Ada", "access_code": "wrong",
+        "email": "ada@example.com", "access_code": "wrong",
         "public_key": client.pubkey, "_csrf": token,
     })
     assert r.status_code == 400
@@ -250,3 +266,76 @@ def test_release_during_setup_does_not_leave_key_behind(client):
         time.sleep(0.05)
     assert client.app.state.keyctl.list() == []
     assert client.get(loc).status_code == 404    # their link is gone with the claim
+
+
+# --------------------------------------------------------------------------- #
+# registered emails: one VM each
+# --------------------------------------------------------------------------- #
+@requires_pg
+def test_unregistered_email_is_refused(client):
+    r = _post_signup(client, email="stranger@example.com")
+    assert r.status_code == 403
+    assert "registration list" in r.text
+    assert "0 taken" in client.get("/admin", auth=("admin", "pw")).text
+
+
+@requires_pg
+def test_email_is_matched_case_and_space_insensitively(client):
+    first = _signup(client, email="ada@example.com")
+    again = _signup(client, email="  Ada@Example.COM ")
+    assert first == again
+    assert "1 taken" in client.get("/admin", auth=("admin", "pw")).text
+
+
+@requires_pg
+def test_same_email_with_a_different_key_is_refused(client, tmp_path):
+    loc = _signup(client)
+    assert _wait_state(client, loc) == "ready"
+    r = _post_signup(client, key=_new_key(tmp_path))
+    assert r.status_code == 409
+    assert "different SSH key" in r.text
+    admin = client.get("/admin", auth=("admin", "pw")).text
+    assert "1 taken" in admin                       # no second VM
+    assert len(client.app.state.keyctl.list()) == 1  # and the original key stands
+
+
+@requires_pg
+def test_one_key_cannot_serve_two_attendees(client):
+    _signup(client, email="ada@example.com")
+    r = _post_signup(client, email="grace@example.com")   # same key as Ada
+    assert r.status_code == 409
+    assert "already registered to another attendee" in r.text
+
+
+@requires_pg
+def test_name_comes_from_the_registration_list(client, tmp_path):
+    loc = _signup(client, email="ada@example.com")
+    assert _wait_state(client, loc) == "ready"
+    assert "Ada Lovelace" in client.get(loc).text
+    loc2 = _signup(client, email="linus@example.com", key=_new_key(tmp_path))  # no name on file
+    assert _wait_state(client, loc2) == "ready"
+    assert "linus" in client.get(loc2).text
+
+
+@requires_pg
+def test_admin_can_paste_and_replace_the_attendee_list(client):
+    admin = client.get("/admin", auth=("admin", "pw"))
+    r = client.post("/admin/attendees", auth=("admin", "pw"), data={
+        "_csrf": _csrf(admin.text),
+        "attendees": "email,name\nNew.Person@Example.com, New Person\nplain@example.com\nnot an email\n",
+        "replace": "1",
+    })
+    assert r.status_code == 200
+    assert "Replaced the list with 2" in r.text and "Skipped 1" in r.text
+    assert "<td>new.person@example.com</td>" in r.text
+    assert "<td>ada@example.com</td>" not in r.text      # (the form placeholder still mentions it)
+    assert _post_signup(client, email="ada@example.com").status_code == 403   # off the list now
+    assert _post_signup(client, email="new.person@example.com").status_code == 303
+
+
+def test_parse_attendee_lines():
+    from app.main import parse_attendee_lines
+    rows, bad = parse_attendee_lines(
+        "# comment\nemail,name\nA@x.io, Ann\nBob Smith;bob@x.io\n\nc@x.io\na@x.io,Ann Again\nnope\n")
+    assert dict(rows) == {"a@x.io": "Ann Again", "bob@x.io": "Bob Smith", "c@x.io": None}
+    assert bad == ["nope"]

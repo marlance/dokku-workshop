@@ -10,6 +10,7 @@ import secrets
 from dataclasses import dataclass
 from pathlib import Path
 
+from psycopg import errors as pg_errors
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 
@@ -18,6 +19,15 @@ SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
 
 class NoFreeVMError(RuntimeError):
     """No free VM left in the pool."""
+
+
+class AlreadyClaimedError(RuntimeError):
+    """This email or SSH key already holds a VM (lost a race with itself)."""
+
+
+def normalize_email(raw: str) -> str:
+    """Canonical form used everywhere an email is stored or compared."""
+    return (raw or "").strip().lower()
 
 
 @dataclass
@@ -33,6 +43,7 @@ class VM:
     key_state: str | None = None   # 'preparing' | 'ready' | 'failed' | None (= ready)
     key_error: str | None = None
     public_key: str | None = None
+    email: str | None = None
 
     @property
     def access(self) -> str:
@@ -91,6 +102,49 @@ class Database:
             row = await cur.fetchone()
         return _vm(row) if row else None
 
+    async def get_by_email(self, email: str) -> VM | None:
+        async with self.pool.connection() as conn:
+            cur = await conn.execute("SELECT * FROM vms WHERE email = %s", (email,))
+            row = await cur.fetchone()
+        return _vm(row) if row else None
+
+    # -- registered attendees ------------------------------------------------ #
+    async def get_attendee(self, email: str) -> dict | None:
+        async with self.pool.connection() as conn:
+            cur = await conn.execute("SELECT * FROM attendees WHERE email = %s", (email,))
+            return await cur.fetchone()
+
+    async def list_attendees(self) -> list[dict]:
+        """Registered attendees with the VM each holds, if any."""
+        async with self.pool.connection() as conn:
+            cur = await conn.execute(
+                """
+                SELECT a.email, a.name, v.vm_user
+                FROM attendees a LEFT JOIN vms v ON v.email = a.email
+                ORDER BY a.email
+                """
+            )
+            return await cur.fetchall()
+
+    async def add_attendees(self, rows: list[tuple[str, str | None]],
+                            replace: bool = False) -> int:
+        """Upsert (email, name) pairs. With replace, the list becomes exactly
+        these rows. VMs already claimed are never touched either way."""
+        async with self.pool.connection() as conn:
+            async with conn.transaction():
+                if replace:
+                    await conn.execute("DELETE FROM attendees")
+                for email, name in rows:
+                    await conn.execute(
+                        """
+                        INSERT INTO attendees (email, name) VALUES (%s, %s)
+                        ON CONFLICT (email) DO UPDATE
+                          SET name = COALESCE(EXCLUDED.name, attendees.name)
+                        """,
+                        (email, name),
+                    )
+        return len(rows)
+
     async def get_by_token(self, token: str) -> VM | None:
         async with self.pool.connection() as conn:
             cur = await conn.execute("SELECT * FROM vms WHERE token = %s", (token,))
@@ -116,7 +170,8 @@ class Database:
 
     # -- the important one -------------------------------------------------- #
     async def claim_free_vm(self, attendee: str, fingerprint: str,
-                            public_key: str | None = None) -> VM:
+                            public_key: str | None = None,
+                            email: str | None = None) -> VM:
         """Atomically claim one free VM for this attendee.
 
         FOR UPDATE SKIP LOCKED means concurrent callers skip rows already locked
@@ -126,6 +181,15 @@ class Database:
         authorized on the jump host afterwards by the background worker.
         """
         key_state = "preparing" if public_key else "ready"
+        try:
+            return await self._claim(attendee, fingerprint, public_key, email, key_state)
+        except pg_errors.UniqueViolation as exc:
+            # idx_vms_email / idx_vms_fingerprint: the same email or key was
+            # claimed by a concurrent request. The transaction rolled back, so
+            # the VM this request picked is free again.
+            raise AlreadyClaimedError() from exc
+
+    async def _claim(self, attendee, fingerprint, public_key, email, key_state) -> VM:
         token = secrets.token_urlsafe(16)
         async with self.pool.connection() as conn:
             async with conn.transaction():
@@ -147,10 +211,11 @@ class Database:
                     UPDATE vms
                     SET status = 'taken', attendee = %s, key_fingerprint = %s,
                         label = %s, token = %s, assigned_at = now(),
-                        key_state = %s, key_error = NULL, public_key = %s
+                        key_state = %s, key_error = NULL, public_key = %s, email = %s
                     WHERE vm_user = %s
                     """,
-                    (attendee, fingerprint, vm_user, token, key_state, public_key, vm_user),
+                    (attendee, fingerprint, vm_user, token, key_state, public_key,
+                     email, vm_user),
                 )
                 cur = await conn.execute("SELECT * FROM vms WHERE vm_user = %s", (vm_user,))
                 return _vm(await cur.fetchone())
@@ -162,7 +227,7 @@ class Database:
                 UPDATE vms
                 SET status = 'free', attendee = NULL, key_fingerprint = NULL,
                     label = NULL, token = NULL, assigned_at = NULL,
-                    key_state = NULL, key_error = NULL, public_key = NULL
+                    key_state = NULL, key_error = NULL, public_key = NULL, email = NULL
                 WHERE vm_user = %s
                 """,
                 (vm_user,),

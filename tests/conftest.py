@@ -52,6 +52,7 @@ def seed_pool(n: int) -> None:
     with psycopg.connect(DSN, autocommit=True) as conn:
         conn.execute(SCHEMA_PATH.read_text())
         conn.execute("TRUNCATE vms")
+        conn.execute("TRUNCATE attendees")
         for i in range(1, n + 1):
             conn.execute(
                 "INSERT INTO vms (vm_user, vm_ip, status) VALUES (%s, %s, 'free')",

@@ -10,7 +10,7 @@ import asyncio
 
 from conftest import DSN, requires_pg, seed_pool
 
-from app.db import Database, NoFreeVMError
+from app.db import AlreadyClaimedError, Database, NoFreeVMError
 
 
 @requires_pg
@@ -61,3 +61,35 @@ def test_same_fingerprint_reuses_assignment():
 
     first, looked_up = asyncio.run(run())
     assert first == looked_up
+
+
+@requires_pg
+def test_one_email_racing_itself_gets_exactly_one_vm():
+    """Many simultaneous signups for the SAME email (different keys) must end
+    with one VM taken. The unique index on vms.email is what guarantees it."""
+    seed_pool(10)
+
+    async def run():
+        db = Database(DSN)
+        await db.open()
+        try:
+            async def claim(i: int):
+                try:
+                    vm = await db.claim_free_vm("ada", f"fp-race-{i}", None, "ada@example.com")
+                    return vm.vm_user
+                except AlreadyClaimedError:
+                    return "dup"
+                except NoFreeVMError:
+                    return "none"
+
+            results = await asyncio.gather(*(claim(i) for i in range(20)))
+            taken = [v for v in await db.list_vms() if v.status == "taken"]
+        finally:
+            await db.close()
+        return results, taken
+
+    results, taken = asyncio.run(run())
+    winners = [r for r in results if r not in ("dup", "none")]
+    assert len(winners) == 1, results
+    assert len(taken) == 1 and taken[0].email == "ada@example.com"
+    assert results.count("dup") + results.count("none") == 19
