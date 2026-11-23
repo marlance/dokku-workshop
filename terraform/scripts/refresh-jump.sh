@@ -6,8 +6,8 @@
 # adds or removes VMs (e.g. a higher vm_count), run this:
 #
 #   terraform apply
-#   ./scripts/check-ready.sh        # wait until the new VMs are built
-#   ./scripts/refresh-jump.sh
+#   ./scripts/refresh-jump.sh       # first: check-ready reads the jump host's list
+#   ./scripts/check-ready.sh        # repeat until the new VMs show OK (a few minutes)
 #   -> then click "Sync pool from keyctl" on the app's /admin page
 #
 # What it changes on the jump host (each file is backed up first):
@@ -141,6 +141,7 @@ if [ "$DRY_RUN" = 1 ]; then exit 0; fi
 cat <<EOF
 
 Next:
-  1. ./scripts/check-ready.sh      (every VM, including new ones, should be OK)
+  1. ./scripts/check-ready.sh      (repeat until all ${N_NEW} show OK; new VMs take a few
+                                    minutes to install Dokku)
   2. On the app's /admin page, click "Sync pool from keyctl" -> expect ${N_NEW} VMs.
 EOF
