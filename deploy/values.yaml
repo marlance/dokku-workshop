@@ -29,6 +29,14 @@ gateway:
   enabled: true
   host: dokku-workshop.mum1.apps.kubefunk.net
 
+# Friendly address for attendees, served alongside the one above. The chart
+# adds a route for it and gets a Let's Encrypt certificate over HTTP-01, so
+# the DNS record (a CNAME to the host above) must be "DNS only" in Cloudflare,
+# not proxied.
+customDomain:
+  enabled: true
+  host: navigate-workshop.kubefunk.net
+
 # The image declares a named user ("app"); Kubernetes can only verify
 # runAsNonRoot against a numeric id, so state the id from the Dockerfile.
 securityContext:
