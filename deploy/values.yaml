@@ -11,7 +11,7 @@ image:
   repository: ghcr.io/marlance/dokku-workshop
   # Updated automatically by .github/workflows/image.yml after each build.
   # To pin or roll back by hand, set it to any pushed tag (a full commit SHA).
-  tag: "9c4d14be208e2b98a76de048de0f00ba7bc9aacb" # image-tag
+  tag: "a9736432c734943fe385db7d7b1dd57604893e1f" # image-tag
   pullPolicy: Always
 
 # Pull secret for the private GitHub container registry.
